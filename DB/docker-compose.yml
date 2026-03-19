@@ -1,0 +1,164 @@
+services:
+
+  pg-north-primary:
+    image: postgres:15
+    container_name: pg-north-primary
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - north_primary_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+      - ./config/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    command: >
+      postgres
+      -c hba_file=/etc/postgresql/pg_hba.conf
+      -c wal_level=replica
+      -c max_wal_senders=10
+      -c wal_keep_size=128MB
+      -c hot_standby=on
+
+  pg-north-replica:
+    image: postgres:15
+    container_name: pg-north-replica
+    user: postgres
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "5433:5432"
+    depends_on:
+      - pg-north-primary
+    volumes:
+      - north_replica_data:/var/lib/postgresql/data
+    command: >
+      bash -c "
+      rm -rf /var/lib/postgresql/data/*;
+      until pg_basebackup -h pg-north-primary -D /var/lib/postgresql/data -U replicator -Fp -Xs -P -R;
+      do
+        echo 'Waiting for north primary...';
+        sleep 2;
+      done;
+      chmod 700 /var/lib/postgresql/data;
+      exec postgres
+      "
+
+  pg-south-primary:
+    image: postgres:15
+    container_name: pg-south-primary
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "5434:5432"
+    volumes:
+      - south_primary_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+      - ./config/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    command: >
+      postgres
+      -c hba_file=/etc/postgresql/pg_hba.conf
+      -c wal_level=replica
+      -c max_wal_senders=10
+      -c wal_keep_size=128MB
+      -c hot_standby=on
+
+  pg-south-replica:
+    image: postgres:15
+    container_name: pg-south-replica
+    user: postgres
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "5435:5432"
+    depends_on:
+      - pg-south-primary
+    volumes:
+      - south_replica_data:/var/lib/postgresql/data
+    command: >
+      bash -c "
+      rm -rf /var/lib/postgresql/data/*;
+      until pg_basebackup -h pg-south-primary -D /var/lib/postgresql/data -U replicator -Fp -Xs -P -R;
+      do
+        echo 'Waiting for south primary...';
+        sleep 2;
+      done;
+      chmod 700 /var/lib/postgresql/data;
+      exec postgres
+      "
+
+  postgres-exporter-north-primary:
+    image: quay.io/prometheuscommunity/postgres-exporter
+    container_name: postgres-exporter-north-primary
+    restart: always
+    environment:
+      DATA_SOURCE_NAME: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pg-north-primary:5432/${POSTGRES_DB}?sslmode=disable
+    ports:
+      - "9187:9187"
+    depends_on:
+      - pg-north-primary
+
+  postgres-exporter-north-replica:
+    image: quay.io/prometheuscommunity/postgres-exporter
+    container_name: postgres-exporter-north-replica
+    restart: always
+    environment:
+      DATA_SOURCE_NAME: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pg-north-replica:5432/${POSTGRES_DB}?sslmode=disable
+    ports:
+      - "9188:9187"
+    depends_on:
+      - pg-north-replica
+
+  postgres-exporter-south-primary:
+    image: quay.io/prometheuscommunity/postgres-exporter
+    container_name: postgres-exporter-south-primary
+    restart: always
+    environment:
+      DATA_SOURCE_NAME: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pg-south-primary:5432/${POSTGRES_DB}?sslmode=disable
+    ports:
+      - "9189:9187"
+    depends_on:
+      - pg-south-primary
+
+  postgres-exporter-south-replica:
+    image: quay.io/prometheuscommunity/postgres-exporter
+    container_name: postgres-exporter-south-replica
+    restart: always
+    environment:
+      DATA_SOURCE_NAME: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pg-south-replica:5432/${POSTGRES_DB}?sslmode=disable
+    ports:
+      - "9190:9187"
+    depends_on:
+      - pg-south-replica
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - postgres-exporter-north-primary
+      - postgres-exporter-north-replica
+      - postgres-exporter-south-primary
+      - postgres-exporter-south-replica
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    restart: always
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  north_primary_data:
+  north_replica_data:
+  south_primary_data:
+  south_replica_data:

@@ -1,10 +1,15 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-
+import { ConfigModule } from '@nestjs/config';
+import { DatabaseModule } from './database/database.module';
+import { HealthController } from './health/health.controller';
+import { HealthService } from './health/health.service';
+import { LocationRouterService } from './router/location-router.service';
+import { DbRoutingService } from './db-routing/db-routing.service';
+import { TestDbController } from './test-db/test-db.controller';
+import { TripsController } from './trips/trips.controller';
 @Module({
-  imports: [],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), DatabaseModule],
+  controllers: [HealthController, TestDbController, TripsController],
+  providers: [HealthService, LocationRouterService, DbRoutingService],
 })
 export class AppModule {}

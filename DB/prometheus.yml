@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: 'postgres-north-primary'
+    static_configs:
+      - targets: ['postgres-exporter-north-primary:9187']
+
+  - job_name: 'postgres-north-replica'
+    static_configs:
+      - targets: ['postgres-exporter-north-replica:9187']
+
+  - job_name: 'postgres-south-primary'
+    static_configs:
+      - targets: ['postgres-exporter-south-primary:9187']
+
+  - job_name: 'postgres-south-replica'
+    static_configs:
+      - targets: ['postgres-exporter-south-replica:9187']
+

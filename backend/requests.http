@@ -1,0 +1,43 @@
+### Health (nodes + serviceLevel)
+GET http://localhost:3000/health
+
+### Trip history (READ) — SOUTH
+GET http://localhost:3000/trips/history?latitude=10.77
+
+### Trip history (READ) — NORTH
+GET http://localhost:3000/trips/history?latitude=21.03
+
+### Book trip (WRITE) — SOUTH (should fail with 503 when south primary is down)
+POST http://localhost:3000/trips/book
+Content-Type: application/json
+
+{
+  "latitude": 10.77,
+  "note": "demo booking from requests.http"
+}
+
+### Book trip (WRITE) — NORTH (should fail with 503 when north primary is down)
+POST http://localhost:3000/trips/book
+Content-Type: application/json
+
+{
+  "latitude": 21.03,
+  "note": "demo booking from requests.http"
+}
+
+### Low-level DB routing test (READ)
+POST http://localhost:3000/test-db/read
+Content-Type: application/json
+
+{
+  "latitude": 10.77
+}
+
+### Low-level DB routing test (WRITE)
+POST http://localhost:3000/test-db/write
+Content-Type: application/json
+
+{
+  "latitude": 10.77
+}
+
