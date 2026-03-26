@@ -163,6 +163,8 @@ export class HealthService implements OnModuleDestroy {
         password: cfg.password,
         database: cfg.database,
         max: 1,
+        connectionTimeoutMillis: 2000, // Thêm timeout 2s để không bị treo
+        query_timeout: 2000, // Thêm timeout truy vấn
         // Nếu bạn dùng SSL, có thể bật thêm ssl: { rejectUnauthorized: false }
         // theo môi trường của bạn.
       });
