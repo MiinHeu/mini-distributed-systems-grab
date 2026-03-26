@@ -44,47 +44,60 @@ export class HealthService implements OnModuleDestroy {
   private readonly logger = new Logger(HealthService.name);
 
   private readonly pools: {
-    northPrimary: Pool;
-    northReplica: Pool;
-    southPrimary: Pool;
-    southReplica: Pool;
+    northPrimary: Pool | null;
+    northReplica: Pool | null;
+    southPrimary: Pool | null;
+    southReplica: Pool | null;
   };
 
   constructor() {
-    const user = requireEnv('POSTGRES_USER');
-    const password = requireEnv('POSTGRES_PASSWORD');
-    const database = requireEnv('POSTGRES_DB');
-
+    // Initialize pools as null by default
     this.pools = {
-      northPrimary: this.createPool({
-        host: requireEnv('DB_NORTH_PRIMARY_HOST'),
-        port: Number(process.env.DB_NORTH_PRIMARY_PORT ?? 5432),
-        user,
-        password,
-        database,
-      }),
-      northReplica: this.createPool({
-        host: requireEnv('DB_NORTH_REPLICA_HOST'),
-        port: Number(process.env.DB_NORTH_REPLICA_PORT ?? 5433),
-        user,
-        password,
-        database,
-      }),
-      southPrimary: this.createPool({
-        host: requireEnv('DB_SOUTH_PRIMARY_HOST'),
-        port: Number(process.env.DB_SOUTH_PRIMARY_PORT ?? 5434),
-        user,
-        password,
-        database,
-      }),
-      southReplica: this.createPool({
-        host: requireEnv('DB_SOUTH_REPLICA_HOST'),
-        port: Number(process.env.DB_SOUTH_REPLICA_PORT ?? 5435),
-        user,
-        password,
-        database,
-      }),
+      northPrimary: null,
+      northReplica: null,
+      southPrimary: null,
+      southReplica: null,
     };
+
+    try {
+      const user = requireEnv('POSTGRES_USER');
+      const password = requireEnv('POSTGRES_PASSWORD');
+      const database = requireEnv('POSTGRES_DB');
+
+      this.pools = {
+        northPrimary: this.createPool({
+          host: requireEnv('DB_NORTH_PRIMARY_HOST'),
+          port: Number(process.env.DB_NORTH_PRIMARY_PORT ?? 5432),
+          user,
+          password,
+          database,
+        }),
+        northReplica: this.createPool({
+          host: requireEnv('DB_NORTH_REPLICA_HOST'),
+          port: Number(process.env.DB_NORTH_REPLICA_PORT ?? 5433),
+          user,
+          password,
+          database,
+        }),
+        southPrimary: this.createPool({
+          host: requireEnv('DB_SOUTH_PRIMARY_HOST'),
+          port: Number(process.env.DB_SOUTH_PRIMARY_PORT ?? 5434),
+          user,
+          password,
+          database,
+        }),
+        southReplica: this.createPool({
+          host: requireEnv('DB_SOUTH_REPLICA_HOST'),
+          port: Number(process.env.DB_SOUTH_REPLICA_PORT ?? 5435),
+          user,
+          password,
+          database,
+        }),
+      };
+    } catch (err) {
+      this.logger.warn(`Database initialization failed: ${(err as Error).message}. Running in offline mode.`);
+      // Keep pools as null - will return offline status
+    }
   }
 
   private createPool(cfg: {
@@ -93,38 +106,46 @@ export class HealthService implements OnModuleDestroy {
     user: string;
     password: string;
     database: string;
-  }): Pool {
-    // max: 1 để giảm tài nguyên trong health check.
-    const pool = new Pool({
-      host: cfg.host,
-      port: cfg.port,
-      user: cfg.user,
-      password: cfg.password,
-      database: cfg.database,
-      max: 1,
-      // Nếu bạn dùng SSL, có thể bật thêm ssl: { rejectUnauthorized: false }
-      // theo môi trường của bạn.
-    });
+  }): Pool | null {
+    try {
+      // max: 1 để giảm tài nguyên trong health check.
+      const pool = new Pool({
+        host: cfg.host,
+        port: cfg.port,
+        user: cfg.user,
+        password: cfg.password,
+        database: cfg.database,
+        max: 1,
+        // Nếu bạn dùng SSL, có thể bật thêm ssl: { rejectUnauthorized: false }
+        // theo môi trường của bạn.
+      });
 
-    // Quan trọng: khi container PostgreSQL bị stop, `pg` có thể phát sinh event `error`.
-    // Nếu không attach handler thì Node sẽ crash vì unhandled 'error' event.
-    pool.on('error', (err: Error) => {
-      this.logger.warn(`pg pool error (${cfg.host}:${cfg.port}/${cfg.database}): ${err.message}`);
-    });
+      // Quan trọng: khi container PostgreSQL bị stop, `pg` có thể phát sinh event `error`.
+      // Nếu không attach handler thì Node sẽ crash vì unhandled 'error' event.
+      pool.on('error', (err: Error) => {
+        this.logger.warn(`pg pool error (${cfg.host}:${cfg.port}/${cfg.database}): ${err.message}`);
+      });
 
-    return pool;
+      return pool;
+    } catch (err) {
+      this.logger.warn(`Failed to create pool for ${cfg.host}:${cfg.port}: ${(err as Error).message}`);
+      return null;
+    }
   }
 
   async onModuleDestroy() {
     // pg Pool end() không trả Promise trong mọi phiên bản, nên dùng await kiểu "best effort".
     try {
-      Object.values(this.pools).forEach((p) => p.end());
+      Object.values(this.pools).forEach((p) => p?.end());
     } catch (e) {
       this.logger.warn(`Failed to close pg pools: ${(e as Error).message}`);
     }
   }
 
-  async checkNode(connection: Pool): Promise<NodeStatus> {
+  async checkNode(connection: Pool | null): Promise<NodeStatus> {
+    if (!connection) {
+      return 'offline';
+    }
     try {
       await connection.query('SELECT 1;');
       return 'online';
