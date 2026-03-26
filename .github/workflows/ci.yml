@@ -1,0 +1,57 @@
+name: CI (NestJS + Docker)
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      # Test/e2e của dự án khởi tạo HealthService => cần các env này tồn tại.
+      POSTGRES_USER: rideshare_admin
+      POSTGRES_PASSWORD: Admin@123456
+      POSTGRES_DB: rideshare_db
+      DB_NORTH_PRIMARY_HOST: localhost
+      DB_NORTH_PRIMARY_PORT: "5432"
+      DB_NORTH_REPLICA_HOST: localhost
+      DB_NORTH_REPLICA_PORT: "5433"
+      DB_SOUTH_PRIMARY_HOST: localhost
+      DB_SOUTH_PRIMARY_PORT: "5434"
+      DB_SOUTH_REPLICA_HOST: localhost
+      DB_SOUTH_REPLICA_PORT: "5435"
+      PORT: "3000"
+      NODE_ENV: "test"
+      JWT_SECRET: "test_secret"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies (backend)
+        working-directory: backend
+        run: npm ci
+
+      - name: Lint (backend)
+        working-directory: backend
+        run: npm run lint
+
+      - name: Test (backend)
+        working-directory: backend
+        run: npm test
+
+      - name: Build project (backend)
+        working-directory: backend
+        run: npm run build
+
+      - name: Build Docker image (backend)
+        run: docker build -t health-backend:${{ github.sha }} ./backend
+
