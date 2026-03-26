@@ -60,34 +60,51 @@ export class HealthService implements OnModuleDestroy {
     };
 
     try {
-      const user = requireEnv('POSTGRES_USER');
-      const password = requireEnv('POSTGRES_PASSWORD');
-      const database = requireEnv('POSTGRES_DB');
+      // Try to get env vars, but don't require them
+      const user = process.env.POSTGRES_USER;
+      const password = process.env.POSTGRES_PASSWORD;
+      const database = process.env.POSTGRES_DB;
+
+      // If any critical env var is missing, skip pool creation
+      if (!user || !password || !database) {
+        this.logger.warn(`Missing PostgreSQL credentials. Running without database.`);
+        return;
+      }
+
+      const northPrimaryHost = process.env.DB_NORTH_PRIMARY_HOST;
+      const northReplicaHost = process.env.DB_NORTH_REPLICA_HOST;
+      const southPrimaryHost = process.env.DB_SOUTH_PRIMARY_HOST;
+      const southReplicaHost = process.env.DB_SOUTH_REPLICA_HOST;
+
+      if (!northPrimaryHost || !northReplicaHost || !southPrimaryHost || !southReplicaHost) {
+        this.logger.warn(`Missing database hostname configuration. Running without database.`);
+        return;
+      }
 
       this.pools = {
         northPrimary: this.createPool({
-          host: requireEnv('DB_NORTH_PRIMARY_HOST'),
+          host: northPrimaryHost,
           port: Number(process.env.DB_NORTH_PRIMARY_PORT ?? 5432),
           user,
           password,
           database,
         }),
         northReplica: this.createPool({
-          host: requireEnv('DB_NORTH_REPLICA_HOST'),
+          host: northReplicaHost,
           port: Number(process.env.DB_NORTH_REPLICA_PORT ?? 5433),
           user,
           password,
           database,
         }),
         southPrimary: this.createPool({
-          host: requireEnv('DB_SOUTH_PRIMARY_HOST'),
+          host: southPrimaryHost,
           port: Number(process.env.DB_SOUTH_PRIMARY_PORT ?? 5434),
           user,
           password,
           database,
         }),
         southReplica: this.createPool({
-          host: requireEnv('DB_SOUTH_REPLICA_HOST'),
+          host: southReplicaHost,
           port: Number(process.env.DB_SOUTH_REPLICA_PORT ?? 5435),
           user,
           password,
@@ -95,8 +112,7 @@ export class HealthService implements OnModuleDestroy {
         }),
       };
     } catch (err) {
-      this.logger.warn(`Database initialization failed: ${(err as Error).message}. Running in offline mode.`);
-      // Keep pools as null - will return offline status
+      this.logger.warn(`Database initialization error: ${(err as Error).message}. Running without database.`);
     }
   }
 
