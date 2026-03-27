@@ -1,9 +1,0 @@
-[build]
-builder = "dockerfile"
-dockerfile = "./Dockerfile"
-
-[deploy]
-startCommand = "npm run start:prod"
-restartPolicyType = "always"
-restartPolicyMaxRetries = 5
-healthchecks = {enabled = true, path = "/health"}
