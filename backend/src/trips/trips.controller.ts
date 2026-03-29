@@ -1,4 +1,11 @@
-import { BadRequestException, Body, Controller, Get, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { DbRoutingService } from '../db-routing/db-routing.service';
 import { ok } from '../common/api-response';
 
@@ -92,4 +99,3 @@ export class TripsController {
     );
   }
 }
-

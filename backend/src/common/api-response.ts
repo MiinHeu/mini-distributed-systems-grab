@@ -13,4 +13,3 @@ export function ok<T>(data: T, opts?: Partial<ApiResponse<T>>): ApiResponse<T> {
     data,
   };
 }
-

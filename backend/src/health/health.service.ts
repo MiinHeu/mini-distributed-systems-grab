@@ -63,9 +63,13 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
 
   serviceLevelForRegion(region: 'north' | 'south'): ServiceLevel {
     const primaryHealthy =
-      region === 'north' ? this.statuses.northPrimary : this.statuses.southPrimary;
+      region === 'north'
+        ? this.statuses.northPrimary
+        : this.statuses.southPrimary;
     const replicaHealthy =
-      region === 'north' ? this.statuses.northReplica : this.statuses.southReplica;
+      region === 'north'
+        ? this.statuses.northReplica
+        : this.statuses.southReplica;
 
     if (primaryHealthy) return 'full';
     if (replicaHealthy) return 'readonly';
