@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # ========== SOUTH PRIMARY ==========
+  south-primary:
+    image: postgres:15
+    container_name: south-primary
+    environment:
+      POSTGRES_USER: rideshare_admin
+      POSTGRES_PASSWORD: Admin@123456
+      POSTGRES_DB: rideshare_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - south_primary_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    command: |
+      postgres
+      -c wal_level=replica
+      -c max_wal_senders=3
+      -c wal_keep_size=64
+
+  # ========== SOUTH REPLICA ==========
+  south-replica:
+    image: postgres:15
+    container_name: south-replica
+    environment:
+      POSTGRES_USER: rideshare_admin
+      POSTGRES_PASSWORD: Admin@123456
+      POSTGRES_DB: rideshare_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - south_replica_data:/var/lib/postgresql/data
+    depends_on:
+      - south-primary
+
+  # ========== NORTH PRIMARY ==========
+  north-primary:
+    image: postgres:15
+    container_name: north-primary
+    environment:
+      POSTGRES_USER: rideshare_admin
+      POSTGRES_PASSWORD: Admin@123456
+      POSTGRES_DB: rideshare_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - north_primary_data:/var/lib/postgresql/data
+    command: |
+      postgres
+      -c wal_level=replica
+      -c max_wal_senders=3
+      -c wal_keep_size=64
+
+  # ========== NORTH REPLICA ==========
+  north-replica:
+    image: postgres:15
+    container_name: north-replica
+    environment:
+      POSTGRES_USER: rideshare_admin
+      POSTGRES_PASSWORD: Admin@123456
+      POSTGRES_DB: rideshare_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - north_replica_data:/var/lib/postgresql/data
+    depends_on:
+      - north-primary
+
+volumes:
+  south_primary_data:
+  south_replica_data:
+  north_primary_data:
+  north_replica_data:
