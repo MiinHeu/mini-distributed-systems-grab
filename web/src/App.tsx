@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactElement } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import SystemMonitor from './SystemMonitor'
 import './App.css'
 
 type PreferredLanguage = 'vi' | 'en'
@@ -205,6 +206,7 @@ function App() {
                 </RequireAuth>
               }
             />
+            <Route path="/monitor" element={<SystemMonitor />} />
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </main>

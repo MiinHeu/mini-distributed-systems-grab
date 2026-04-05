@@ -23,4 +23,14 @@ export class HealthController {
       },
     });
   }
+
+  @Get('north')
+  async healthNorth() {
+    return this.healthService.snapshot();
+  }
+
+  @Get('south')
+  async healthSouth() {
+    return this.healthService.snapshot();
+  }
 }
