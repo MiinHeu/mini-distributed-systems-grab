@@ -8,8 +8,10 @@ import { DbRoutingService } from './db-routing/db-routing.service';
 import { TestDbController } from './test-db/test-db.controller';
 import { TripsController } from './trips/trips.controller';
 import { AuthModule } from './auth/auth.module';
+import { DriversModule } from './drivers/drivers.module';
+
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), DatabaseModule, AuthModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), DatabaseModule, AuthModule, DriversModule],
   controllers: [HealthController, TestDbController, TripsController],
   providers: [HealthService, LocationRouterService, DbRoutingService],
 })
