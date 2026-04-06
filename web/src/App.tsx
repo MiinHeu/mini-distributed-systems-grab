@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent, ReactElement } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import SystemMonitor from './SystemMonitor'
+import Dashboard from './Dashboard'
 import './App.css'
 
 type PreferredLanguage = 'vi' | 'en'
@@ -207,6 +208,7 @@ function App() {
               }
             />
             <Route path="/monitor" element={<SystemMonitor />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </main>

@@ -7,6 +7,7 @@ import { LocationRouterService } from './router/location-router.service';
 import { DbRoutingService } from './db-routing/db-routing.service';
 import { TestDbController } from './test-db/test-db.controller';
 import { TripsController } from './trips/trips.controller';
+import { ReportsController } from './reports/reports.controller';
 import { AuthModule } from './auth/auth.module';
 import { DriversModule } from './drivers/drivers.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -43,7 +44,7 @@ import { TripsModule } from './trips/trips.module';
     }),
     TripsModule,
   ],
-  controllers: [HealthController, TestDbController, TripsController],
+  controllers: [HealthController, TestDbController, TripsController, ReportsController],
   providers: [HealthService, LocationRouterService, DbRoutingService],
 })
 export class AppModule {}
