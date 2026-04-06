@@ -10,13 +10,27 @@ export class TripsController {
     return this.tripsService.bookTrip(body);
   }
 
-  @Get(':id')
-  getTrip(@Param('id') id: string) {
-    return this.tripsService.getTripById(Number(id));
+  @Get(':region/:id')
+  getTrip(
+    @Param('id') id: string,
+    @Param('region') region: string,
+  ) {
+    return this.tripsService.getTripById(Number(id), region);
   }
 
-  @Patch(':id/cancel')
-  cancelTrip(@Param('id') id: string) {
-    return this.tripsService.cancelTrip(Number(id));
+  @Patch(':region/:id/cancel')
+  cancelTrip(
+    @Param('id') id: string,
+    @Param('region') region: string,
+  ) {
+    return this.tripsService.cancelTrip(Number(id), region);
+  }
+
+  @Patch(':region/:id/complete')
+  completeTrip(
+    @Param('id') id: string,
+    @Param('region') region: string,
+  ) {
+    return this.tripsService.completeTrip(Number(id), region);
   }
 }
