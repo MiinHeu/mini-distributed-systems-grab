@@ -12,12 +12,15 @@ import { AuthModule } from './auth/auth.module';
 import { DriversModule } from './drivers/drivers.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TripsModule } from './trips/trips.module';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }), 
-    DatabaseModule, 
-    AuthModule, 
+    ConfigModule.forRoot({ isGlobal: true }),
+    DatabaseModule,
+    AuthModule,
     DriversModule,
     // South PRIMARY
     TypeOrmModule.forRoot({
@@ -43,8 +46,9 @@ import { TripsModule } from './trips/trips.module';
       synchronize: false,
     }),
     TripsModule,
+    AdminModule,
   ],
-  controllers: [HealthController, TestDbController, TripsController, ReportsController],
-  providers: [HealthService, LocationRouterService, DbRoutingService],
+  controllers: [HealthController, TestDbController, TripsController, ReportsController, AppController],
+  providers: [HealthService, LocationRouterService, DbRoutingService, AppService],
 })
 export class AppModule {}

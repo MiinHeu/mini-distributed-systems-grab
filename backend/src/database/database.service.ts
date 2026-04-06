@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Pool, QueryResult } from 'pg';
+import { Pool, QueryResult, QueryResultRow } from 'pg';
 import { Region } from '../common/location.utils';
 
 @Injectable()
@@ -54,7 +54,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async queryWithFailover<T = any>(
+  async queryWithFailover<T extends QueryResultRow = any>(
     region: Region,
     queryText: string,
     values?: any[],
