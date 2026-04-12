@@ -6,7 +6,6 @@ import { HealthService } from './health/health.service';
 import { LocationRouterService } from './router/location-router.service';
 import { DbRoutingService } from './db-routing/db-routing.service';
 import { TestDbController } from './test-db/test-db.controller';
-import { TripsController } from './trips/trips.controller';
 import { ReportsController } from './reports/reports.controller';
 import { AuthModule } from './auth/auth.module';
 import { DriversModule } from './drivers/drivers.module';
@@ -15,13 +14,13 @@ import { TripsModule } from './trips/trips.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AdminModule } from './admin/admin.module';
+import { RatingsModule } from './ratings/ratings.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    DatabaseModule,
-    AuthModule,
-    DriversModule,
+
     // South PRIMARY
     TypeOrmModule.forRoot({
       name: 'primary',
@@ -33,7 +32,9 @@ import { AdminModule } from './admin/admin.module';
       database: process.env.POSTGRES_DB,
       synchronize: false,
       connectTimeoutMS: 3000,
+      entities: [__dirname + '/**/*.entity{.ts,.js}'],
     }),
+
     // South REPLICA
     TypeOrmModule.forRoot({
       name: 'replica',
@@ -44,11 +45,18 @@ import { AdminModule } from './admin/admin.module';
       password: process.env.POSTGRES_PASSWORD,
       database: process.env.POSTGRES_DB,
       synchronize: false,
+      entities: [__dirname + '/**/*.entity{.ts,.js}'],
     }),
+
+    DatabaseModule,
+    AuthModule,
+    DriversModule,
     TripsModule,
     AdminModule,
+    RatingsModule,
+    PaymentsModule,
   ],
-  controllers: [HealthController, TestDbController, TripsController, ReportsController, AppController],
+  controllers: [HealthController, TestDbController, ReportsController, AppController],
   providers: [HealthService, LocationRouterService, DbRoutingService, AppService],
 })
 export class AppModule {}

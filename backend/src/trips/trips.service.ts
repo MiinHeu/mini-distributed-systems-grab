@@ -1,34 +1,13 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
-import { Trip } from './entities/trip.entity';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 
 @Injectable()
 export class TripsService {
   constructor(
-    @InjectRepository(Trip) private readonly tripRepository: Repository<Trip>,
     @InjectDataSource('primary') private primaryDS: DataSource,
     @InjectDataSource('replica') private replicaDS: DataSource,
   ) {}
-
-  async bookTripLegacy(data: Partial<Trip>) {
-    const trip = this.tripRepository.create({
-      ...data,
-      status: 'pending',
-    });
-    return await this.tripRepository.save(trip);
-  }
-
-  async getTripById(id: number) {
-    return await this.tripRepository.findOne({ where: { id } });
-  }
-
-  async cancelTrip(id: number) {
-    const trip = await this.tripRepository.findOne({ where: { id } });
-    if (!trip) return { message: 'Trip not found' };
-    trip.status = 'cancelled';
-    return await this.tripRepository.save(trip);
-  }
 
   async getTripHistory(userId: number) {
     let ds: DataSource;
@@ -78,7 +57,9 @@ export class TripsService {
     try {
       await this.primaryDS.query('SELECT 1');
     } catch {
-      throw new ServiceUnavailableException('Không thể đặt chuyến khi hệ thống đang ở chế độ chỉ đọc');
+      throw new ServiceUnavailableException(
+        'Không thể đặt chuyến khi hệ thống đang ở chế độ chỉ đọc',
+      );
     }
 
     const result = await this.primaryDS.query(
@@ -89,5 +70,37 @@ export class TripsService {
     );
 
     return { message: 'Đặt chuyến thành công', trip: result[0] };
+  }
+  async bookTripLegacy(data: any) {
+    try {
+      await this.primaryDS.query('SELECT 1');
+    } catch {
+      throw new ServiceUnavailableException('Hệ thống đang ở chế độ chỉ đọc');
+    }
+    const result = await this.primaryDS.query(
+      `INSERT INTO trips (customer_id, driver_id, status, pickup_address, dropoff_address, fare, region)
+       VALUES (1, 1, 'pending', $1, $2, 0, 'south')
+       RETURNING *`,
+      [data.pickup || '', data.dropoff || ''],
+    );
+    return result[0];
+  }
+
+  async getTripById(id: number) {
+    const result = await this.primaryDS.query(
+      `SELECT * FROM trips WHERE id = $1`,
+      [id],
+    );
+    return result[0] || null;
+  }
+
+  async cancelTrip(id: number) {
+    const trip = await this.getTripById(id);
+    if (!trip) return { message: 'Trip not found' };
+    await this.primaryDS.query(
+      `UPDATE trips SET status = 'cancelled' WHERE id = $1`,
+      [id],
+    );
+    return { message: 'Trip cancelled' };
   }
 }
