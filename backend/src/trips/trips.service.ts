@@ -4,8 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import { Repository } from 'typeorm';
 import { Trip, TripStatus, TripRegion } from './entities/trip.entity';
+import { EstimateTripDto } from './dto/estimate-trip.dto';
 
 @Injectable()
 export class TripsService {
@@ -15,6 +18,8 @@ export class TripsService {
 
     @InjectRepository(Trip, 's2')
     private readonly tripRepositoryS2: Repository<Trip>,
+
+    private readonly httpService: HttpService,
   ) {}
 
   private getRepositoryByRegion(region: string | TripRegion): Repository<Trip> {
@@ -121,5 +126,42 @@ export class TripsService {
     trip.completed_at = new Date();
 
     return await repository.save(trip);
+  }
+
+  async estimateTrip(body: EstimateTripDto) {
+    const {
+      pickup_lat,
+      pickup_lng,
+      dropoff_lat,
+      dropoff_lng,
+    } = body;
+
+    const osrmUrl =
+      `https://router.project-osrm.org/route/v1/driving/` +
+      `${pickup_lng},${pickup_lat};${dropoff_lng},${dropoff_lat}` +
+      `?overview=full&geometries=geojson`;
+
+    const response = await firstValueFrom(this.httpService.get(osrmUrl));
+
+    const route = response.data?.routes?.[0];
+
+    if (!route) {
+      throw new BadRequestException('Khong tinh duoc quang duong tu OSRM');
+    }
+
+    const distanceMeters = route.distance;
+    const durationSeconds = route.duration;
+    const distance_km = distanceMeters / 1000;
+
+    const base_fare = 10000;
+    const price_per_km = 5000;
+    const estimated_fare = Math.round(base_fare + distance_km * price_per_km);
+
+    return {
+      distance_km: Number(distance_km.toFixed(2)),
+      estimated_fare,
+      duration_minutes: Number((durationSeconds / 60).toFixed(1)),
+      route: route.geometry,
+    };
   }
 }

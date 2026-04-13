@@ -1,5 +1,6 @@
 import { Body, Controller, Post, Get, Param, Patch } from '@nestjs/common';
 import { TripsService } from './trips.service';
+import { EstimateTripDto } from './dto/estimate-trip.dto';
 
 @Controller('trips')
 export class TripsController {
@@ -8,6 +9,11 @@ export class TripsController {
   @Post('book')
   bookTrip(@Body() body: any) {
     return this.tripsService.bookTrip(body);
+  }
+
+  @Post('estimate')
+  estimate(@Body() body: EstimateTripDto) {
+    return this.tripsService.estimateTrip(body);
   }
 
   @Get(':region/:id')
