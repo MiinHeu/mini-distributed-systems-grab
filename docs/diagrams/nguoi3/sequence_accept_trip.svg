@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#111827"/></marker>
+    <style>
+      .title{font:700 30px Arial;fill:#111827}.lane{fill:#f8fafc;stroke:#d1d5db}.head{fill:#111827}.headtext{font:700 15px Arial;fill:#fff}.line{stroke:#9ca3af;stroke-width:2;stroke-dasharray:7 7}.msg{stroke:#111827;stroke-width:2;marker-end:url(#arrow)}.txt{font:14px Arial;fill:#111827}.note{fill:#fff7ed;stroke:#fb923c}.ok{fill:#ecfdf5;stroke:#10b981}.bad{fill:#fef2f2;stroke:#ef4444}.boxtext{font:13px Arial;fill:#111827}</style>
+  </defs>
+  <rect width="1400" height="900" fill="#ffffff"/>
+  <text x="40" y="50" class="title">Sequence - Nguoi 3: Tai xe nhan chuyen</text>
+  <g transform="translate(40,90)">
+    <g><rect class="lane" x="0" y="0" width="160" height="680"/><rect class="head" x="0" y="0" width="160" height="42"/><text class="headtext" x="80" y="27" text-anchor="middle">Tai xe</text><line class="line" x1="80" y1="42" x2="80" y2="680"/></g>
+    <g><rect class="lane" x="200" y="0" width="170" height="680"/><rect class="head" x="200" y="0" width="170" height="42"/><text class="headtext" x="285" y="27" text-anchor="middle">AcceptTripScreen</text><line class="line" x1="285" y1="42" x2="285" y2="680"/></g>
+    <g><rect class="lane" x="420" y="0" width="170" height="680"/><rect class="head" x="420" y="0" width="170" height="42"/><text class="headtext" x="505" y="27" text-anchor="middle">TripsController</text><line class="line" x1="505" y1="42" x2="505" y2="680"/></g>
+    <g><rect class="lane" x="640" y="0" width="160" height="680"/><rect class="head" x="640" y="0" width="160" height="42"/><text class="headtext" x="720" y="27" text-anchor="middle">TripsService</text><line class="line" x1="720" y1="42" x2="720" y2="680"/></g>
+    <g><rect class="lane" x="850" y="0" width="160" height="680"/><rect class="head" x="850" y="0" width="160" height="42"/><text class="headtext" x="930" y="27" text-anchor="middle">PostgreSQL</text><line class="line" x1="930" y1="42" x2="930" y2="680"/></g>
+    <g><rect class="lane" x="1060" y="0" width="150" height="680"/><rect class="head" x="1060" y="0" width="150" height="42"/><text class="headtext" x="1135" y="27" text-anchor="middle">TripsGateway</text><line class="line" x1="1135" y1="42" x2="1135" y2="680"/></g>
+    <g><rect class="lane" x="1240" y="0" width="120" height="680"/><rect class="head" x="1240" y="0" width="120" height="42"/><text class="headtext" x="1300" y="27" text-anchor="middle">Khach</text><line class="line" x1="1300" y1="42" x2="1300" y2="680"/></g>
+    <line class="msg" x1="80" y1="90" x2="285" y2="90"/><text class="txt" x="105" y="80">Mo man hinh nhan chuyen</text>
+    <line class="msg" x1="285" y1="140" x2="505" y2="140"/><text class="txt" x="305" y="130">GET /trips/pending?region</text>
+    <line class="msg" x1="505" y1="190" x2="720" y2="190"/><text class="txt" x="535" y="180">getPendingTrips(region)</text>
+    <line class="msg" x1="720" y1="240" x2="930" y2="240"/><text class="txt" x="735" y="230">SELECT pending trips</text>
+    <line class="msg" x1="930" y1="290" x2="720" y2="290"/><text class="txt" x="760" y="280">rows + isReadOnly</text>
+    <line class="msg" x1="720" y1="340" x2="505" y2="340"/><text class="txt" x="555" y="330">return trips</text>
+    <line class="msg" x1="505" y1="390" x2="285" y2="390"/><text class="txt" x="320" y="380">hien thi danh sach</text>
+    <line class="msg" x1="80" y1="450" x2="285" y2="450"/><text class="txt" x="120" y="440">Bam Nhan chuyen</text>
+    <line class="msg" x1="285" y1="500" x2="505" y2="500"/><text class="txt" x="310" y="490">PATCH /trips/:id/accept</text>
+    <line class="msg" x1="505" y1="550" x2="720" y2="550"/><text class="txt" x="535" y="540">acceptTrip(id, driverId)</text>
+    <line class="msg" x1="720" y1="600" x2="930" y2="600"/><text class="txt" x="735" y="590">UPDATE pending -&gt; accepted</text>
+    <line class="msg" x1="930" y1="650" x2="720" y2="650"/><text class="txt" x="755" y="640">updated trip or rowCount=0</text>
+    <line class="msg" x1="505" y1="710" x2="1135" y2="710"/><text class="txt" x="650" y="700">emit trip:accepted + trip:status</text>
+    <line class="msg" x1="1135" y1="760" x2="1300" y2="760"/><text class="txt" x="1160" y="750">notify khach</text>
+  </g>
+  <rect class="ok" x="70" y="810" width="400" height="55" rx="8"/><text class="boxtext" x="90" y="842">Thanh cong: status=accepted, driver_id duoc gan, khach duoc notify realtime.</text>
+  <rect class="bad" x="500" y="810" width="390" height="55" rx="8"/><text class="boxtext" x="520" y="842">Conflict: rowCount=0 khi chuyen da duoc tai xe khac nhan.</text>
+  <rect class="note" x="920" y="810" width="410" height="55" rx="8"/><text class="boxtext" x="940" y="842">Read-only: replica chi doc, accept/complete bi chan.</text>
+</svg>
