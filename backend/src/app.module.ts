@@ -6,7 +6,6 @@ import { HealthService } from './health/health.service';
 import { LocationRouterService } from './router/location-router.service';
 import { DbRoutingService } from './db-routing/db-routing.service';
 import { TestDbController } from './test-db/test-db.controller';
-import { TripsController } from './trips/trips.controller';
 import { ReportsController } from './reports/reports.controller';
 import { AuthModule } from './auth/auth.module';
 import { DriversModule } from './drivers/drivers.module';
@@ -15,6 +14,7 @@ import { TripsModule } from './trips/trips.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AdminModule } from './admin/admin.module';
+import { Trip } from './trips/entities/trip.entity';
 
 @Module({
   imports: [
@@ -22,7 +22,6 @@ import { AdminModule } from './admin/admin.module';
     DatabaseModule,
     AuthModule,
     DriversModule,
-    // South PRIMARY
     TypeOrmModule.forRoot({
       name: 'primary',
       type: 'postgres',
@@ -31,24 +30,26 @@ import { AdminModule } from './admin/admin.module';
       username: process.env.POSTGRES_USER,
       password: process.env.POSTGRES_PASSWORD,
       database: process.env.POSTGRES_DB,
+      entities: [Trip],
       synchronize: false,
       connectTimeoutMS: 3000,
     }),
-    // South REPLICA
     TypeOrmModule.forRoot({
       name: 'replica',
       type: 'postgres',
-      host: process.env.DB_SOUTH_REPLICA_HOST,
-      port: +(process.env.DB_SOUTH_REPLICA_PORT ?? '5435'),
+      host: process.env.DB_SOUTH_PRIMARY_HOST,   // ✅ dùng primary thay replica
+      port: +(process.env.DB_SOUTH_PRIMARY_PORT ?? '5434'), // ✅ port 5434
       username: process.env.POSTGRES_USER,
       password: process.env.POSTGRES_PASSWORD,
       database: process.env.POSTGRES_DB,
+      entities: [Trip],
       synchronize: false,
+      connectTimeoutMS: 3000,
     }),
     TripsModule,
     AdminModule,
   ],
-  controllers: [HealthController, TestDbController, TripsController, ReportsController, AppController],
+  controllers: [HealthController, TestDbController, ReportsController, AppController],
   providers: [HealthService, LocationRouterService, DbRoutingService, AppService],
 })
 export class AppModule {}
