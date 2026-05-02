@@ -48,7 +48,12 @@ import { AdminModule } from './admin/admin.module';
     TripsModule,
     AdminModule,
   ],
-  controllers: [HealthController, TestDbController, TripsController, ReportsController, AppController],
-  providers: [HealthService, LocationRouterService, DbRoutingService, AppService],
+  controllers: [
+    HealthController,
+    TestDbController,
+    ReportsController,
+    AppController,
+  ],
+  providers: [AppService],
 })
 export class AppModule {}

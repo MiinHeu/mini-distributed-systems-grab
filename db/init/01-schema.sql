@@ -1,14 +1,26 @@
 CREATE TABLE IF NOT EXISTS users (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(100) NOT NULL,
-  phone VARCHAR(20),
-  email VARCHAR(100),
-  password VARCHAR(255),
-  role VARCHAR(20) DEFAULT 'customer',
-  avatar_url VARCHAR(255),
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20),
+    email VARCHAR(100) UNIQUE,
+    password VARCHAR(255),
+    role VARCHAR(20) DEFAULT 'customer',
+    avatar_url VARCHAR(255),
+    preferred_language VARCHAR(10) DEFAULT 'vi',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
 );
+
+DO
+$$
+BEGIN
+   IF NOT EXISTS (
+      SELECT FROM pg_roles WHERE rolname = 'replicator'
+   ) THEN
+      CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD 'replica123';
+   END IF;
+END
+$$;
 
 -- Bảng trips
 CREATE TABLE IF NOT EXISTS trips (

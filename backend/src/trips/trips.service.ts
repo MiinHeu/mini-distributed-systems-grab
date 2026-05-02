@@ -6,7 +6,8 @@ import { Trip } from './entities/trip.entity';
 @Injectable()
 export class TripsService {
   constructor(
-    @InjectRepository(Trip) private readonly tripRepository: Repository<Trip>,
+    @InjectRepository(Trip, 'primary')
+    private readonly tripRepository: Repository<Trip>,
     @InjectDataSource('primary') private primaryDS: DataSource,
     @InjectDataSource('replica') private replicaDS: DataSource,
   ) {}
@@ -78,7 +79,9 @@ export class TripsService {
     try {
       await this.primaryDS.query('SELECT 1');
     } catch {
-      throw new ServiceUnavailableException('Không thể đặt chuyến khi hệ thống đang ở chế độ chỉ đọc');
+      throw new ServiceUnavailableException(
+        'Không thể đặt chuyến khi hệ thống đang ở chế độ chỉ đọc',
+      );
     }
 
     const result = await this.primaryDS.query(

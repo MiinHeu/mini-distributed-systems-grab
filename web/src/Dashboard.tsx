@@ -79,7 +79,7 @@ export default function Dashboard() {
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="region" />
             <YAxis />
-            <Tooltip formatter={(v: number) => v.toLocaleString('vi-VN') + ' ₫'} />
+            <Tooltip formatter={(v) => Number(v).toLocaleString('vi-VN') + ' ₫'} />
             <Legend />
             <Bar dataKey="total_revenue" name="Doanh thu (₫)" fill="#6366f1" />
           </BarChart>

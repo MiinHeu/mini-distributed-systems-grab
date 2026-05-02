@@ -21,9 +21,9 @@ export class AdminController {
   }
 
   @Patch('users/:id/unsuspend')
-unsuspendUser(@Param('id') id: string) {
-  return this.adminService.unsuspendUser(id);
-}
+  unsuspendUser(@Param('id') id: string) {
+    return this.adminService.unsuspendUser(id);
+  }
 
   @Delete('users/:id')
   deleteUser(@Param('id') id: string) {

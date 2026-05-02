@@ -1,4 +1,16 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+  ForbiddenException,
+} from '@nestjs/common';
 import { DbRoutingService } from '../db-routing/db-routing.service';
 import { ok } from '../common/api-response';
 import { TripsService } from './trips.service';
@@ -15,7 +27,7 @@ class BookTripDto {
 export class TripsController {
   constructor(
     private readonly dbRouting: DbRoutingService,
-    private readonly tripsService: TripsService
+    private readonly tripsService: TripsService,
   ) {}
 
   @Get('history-legacy')
@@ -23,22 +35,29 @@ export class TripsController {
     const latitude = Number(latitudeRaw);
     if (!Number.isFinite(latitude)) {
       throw new BadRequestException(
-        ok(null, { readOnly: false, warning: 'Missing latitude', activeNode: null })
+        ok(null, {
+          readOnly: false,
+          warning: 'Missing latitude',
+          activeNode: null,
+        }),
       );
     }
     const ctx = this.dbRouting.getReadContext(latitude);
     const result = await ctx.pool.query(
-      `SELECT id, node_name, message, created_at FROM replication_test ORDER BY created_at DESC LIMIT 50`
+      `SELECT id, node_name, message, created_at FROM replication_test ORDER BY created_at DESC LIMIT 50`,
     );
-    return ok({ latitude, region: ctx.region, items: result.rows }, { readOnly: ctx.readOnly });
+    return ok(
+      { latitude, region: ctx.region, items: result.rows },
+      { readOnly: ctx.readOnly },
+    );
   }
 
   @Post('book-legacy')
   bookTripLegacy(@Body() body: any) {
     if (body.latitude) {
-        return this.tripsService.bookTripLegacy(body);
+      return this.tripsService.bookTripLegacy(body);
     } else {
-        throw new BadRequestException("Missing latitude property");
+      throw new BadRequestException('Missing latitude property');
     }
   }
 
