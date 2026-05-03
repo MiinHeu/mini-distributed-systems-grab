@@ -4,6 +4,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthController } from './health/health.controller';
 import { HealthService } from './health/health.service';
 import { LocationRouterService } from './router/location-router.service';
+import { DbRoutingModule } from './db-routing/db-routing.module';
 import { DbRoutingService } from './db-routing/db-routing.service';
 import { TestDbController } from './test-db/test-db.controller';
 import { TripsController } from './trips/trips.controller';
@@ -15,6 +16,7 @@ import { TripsModule } from './trips/trips.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AdminModule } from './admin/admin.module';
+import { MessagesModule } from './messages/messages.module';
 
 @Module({
   imports: [
@@ -22,9 +24,9 @@ import { AdminModule } from './admin/admin.module';
     DatabaseModule,
     AuthModule,
     DriversModule,
+    MessagesModule,
     // South PRIMARY
     TypeOrmModule.forRoot({
-      name: 'primary',
       type: 'postgres',
       host: process.env.DB_SOUTH_PRIMARY_HOST,
       port: +(process.env.DB_SOUTH_PRIMARY_PORT ?? '5434'),
@@ -47,8 +49,9 @@ import { AdminModule } from './admin/admin.module';
     }),
     TripsModule,
     AdminModule,
+    DbRoutingModule,
   ],
-  controllers: [HealthController, TestDbController, TripsController, ReportsController, AppController],
-  providers: [HealthService, LocationRouterService, DbRoutingService, AppService],
+  controllers: [HealthController, TestDbController, ReportsController, AppController],
+  providers: [HealthService, AppService],
 })
 export class AppModule {}

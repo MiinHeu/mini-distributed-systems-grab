@@ -13,8 +13,13 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import DriverHomeScreen from './src/screens/DriverHomeScreen';
+import ChatScreen from './src/screens/ChatScreen';
+import { API_BASE_URL } from './src/config';
 
-type Screen = 'login' | 'register' | 'profile';
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type Screen = 'login' | 'register' | 'profile' | 'driver_home' | 'chat';
 type PreferredLanguage = 'vi' | 'en';
 
 type User = {
@@ -29,48 +34,15 @@ type User = {
   updated_at: string;
 };
 
-type ApiEnvelope<T> = {
-  data: T;
+type ChatParams = {
+  tripId: number;
+  receiverId: number;
+  receiverName: string;
 };
 
-const API_BASE_URL = 'http://10.0.2.2:3000';
+type ApiEnvelope<T> = { data: T };
 
-const i18n = {
-  vi: {
-    title: 'Mini Grab Auth',
-    login: 'Dang nhap',
-    register: 'Dang ky',
-    profile: 'Ho so',
-    logout: 'Dang xuat',
-    name: 'Ho ten',
-    phone: 'So dien thoai',
-    email: 'Email',
-    password: 'Mat khau',
-    role: 'Vai tro',
-    language: 'Ngon ngu',
-    save: 'Luu',
-    pickImage: 'Chon anh',
-    uploadImage: 'Tai anh',
-    refresh: 'Tai lai',
-  },
-  en: {
-    title: 'Mini Grab Auth',
-    login: 'Login',
-    register: 'Register',
-    profile: 'Profile',
-    logout: 'Logout',
-    name: 'Name',
-    phone: 'Phone',
-    email: 'Email',
-    password: 'Password',
-    role: 'Role',
-    language: 'Language',
-    save: 'Save',
-    pickImage: 'Pick image',
-    uploadImage: 'Upload image',
-    refresh: 'Refresh',
-  },
-} as const;
+// ─── API helper ──────────────────────────────────────────────────────────────
 
 async function requestApi<T>(
   path: string,
@@ -95,92 +67,204 @@ async function requestApi<T>(
   return (data as ApiEnvelope<T>).data;
 }
 
+// ─── i18n ────────────────────────────────────────────────────────────────────
+
+const i18n = {
+  vi: {
+    title: 'Mini Grab',
+    login: 'Đăng nhập',
+    register: 'Đăng ký',
+    profile: 'Hồ sơ',
+    driverHome: 'Tài xế',
+    logout: 'Đăng xuất',
+    name: 'Họ tên',
+    phone: 'Số điện thoại',
+    email: 'Email',
+    password: 'Mật khẩu',
+    language: 'Ngôn ngữ',
+    save: 'Lưu',
+    pickImage: 'Chọn ảnh',
+    uploadImage: 'Tải ảnh',
+    refresh: 'Tải lại',
+  },
+  en: {
+    title: 'Mini Grab',
+    login: 'Login',
+    register: 'Register',
+    profile: 'Profile',
+    driverHome: 'Driver',
+    logout: 'Logout',
+    name: 'Name',
+    phone: 'Phone',
+    email: 'Email',
+    password: 'Password',
+    language: 'Language',
+    save: 'Save',
+    pickImage: 'Pick image',
+    uploadImage: 'Upload image',
+    refresh: 'Refresh',
+  },
+} as const;
+
+// ─── Root App ────────────────────────────────────────────────────────────────
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('login');
   const [language, setLanguage] = useState<PreferredLanguage>('vi');
   const [token, setToken] = useState('');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
+  const [chatParams, setChatParams] = useState<ChatParams | null>(null);
 
   const labels = useMemo(() => i18n[language], [language]);
 
+  const handleLogin = (nextToken: string, user: User) => {
+    setToken(nextToken);
+    setCurrentUser(user);
+    // Tài xế → vào màn hình driver, khách/admin → vào profile
+    setScreen(user.role === 'driver' ? 'driver_home' : 'profile');
+  };
+
   const handleLogout = async () => {
-    if (!token) {
-      setScreen('login');
-      return;
+    if (token) {
+      try {
+        await requestApi<{ message: string }>('/auth/logout', language, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        // ignore
+      }
     }
-
-    try {
-      await requestApi<{ message: string }>('/auth/logout', language, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-    } catch {
-      // Ignore logout error and clear token locally.
-    }
-
     setToken('');
+    setCurrentUser(null);
+    setChatParams(null);
     setScreen('login');
   };
 
+  const handleOpenChat = (tripId: number, receiverId: number, receiverName: string) => {
+    setChatParams({ tripId, receiverId, receiverName });
+    setScreen('chat');
+  };
+
+  // ── Màn hình Chat ──────────────────────────────────────────────────────────
+  if (screen === 'chat' && chatParams && currentUser) {
+    return (
+      <SafeAreaView style={{ flex: 1 }}>
+        <View style={styles.chatBackBar}>
+          <TouchableOpacity onPress={() => setScreen('driver_home')} style={styles.backBtn}>
+            <Text style={styles.backBtnText}>← Quay lại</Text>
+          </TouchableOpacity>
+        </View>
+        <ChatScreen
+          tripId={chatParams.tripId}
+          currentUserId={currentUser.id}
+          receiverId={chatParams.receiverId}
+          receiverName={chatParams.receiverName}
+          token={token}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  // ── Màn hình Driver Home ───────────────────────────────────────────────────
+  if (screen === 'driver_home' && currentUser?.role === 'driver') {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
+        <View style={styles.topBar}>
+          <Text style={styles.topBarTitle}>Mini Grab Driver</Text>
+          <TouchableOpacity onPress={handleLogout}>
+            <Text style={styles.logoutText}>Đăng xuất</Text>
+          </TouchableOpacity>
+        </View>
+        <DriverHomeScreen
+          token={token}
+          userId={currentUser.id}
+          onOpenChat={handleOpenChat}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  // ── Màn hình Auth (login / register / profile) ────────────────────────────
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <Text style={styles.title}>{labels.title}</Text>
 
+        {/* Tab navigation */}
         <View style={styles.tabs}>
-          <TouchableOpacity onPress={() => setScreen('login')} style={styles.tabBtn}>
-            <Text>{labels.login}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setScreen('register')} style={styles.tabBtn}>
-            <Text>{labels.register}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setScreen('profile')} style={styles.tabBtn}>
-            <Text>{labels.profile}</Text>
-          </TouchableOpacity>
+          {(['login', 'register', 'profile'] as const).map((s) => (
+            <TouchableOpacity
+              key={s}
+              onPress={() => setScreen(s)}
+              style={[styles.tabBtn, screen === s && styles.tabBtnActive]}
+            >
+              <Text style={[styles.tabText, screen === s && styles.tabTextActive]}>
+                {labels[s as keyof typeof labels]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          {currentUser?.role === 'driver' && (
+            <TouchableOpacity
+              onPress={() => setScreen('driver_home')}
+              style={[styles.tabBtn, screen === 'driver_home' && styles.tabBtnActive]}
+            >
+              <Text style={[styles.tabText, screen === 'driver_home' && styles.tabTextActive]}>
+                {labels.driverHome}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
+        {/* Language + Logout */}
         <View style={styles.languageRow}>
-          <Text>{labels.language}</Text>
+          <Text style={styles.langLabel}>{labels.language}:</Text>
           <View style={styles.langButtons}>
-            <Button title="VI" onPress={() => setLanguage('vi')} />
-            <Button title="EN" onPress={() => setLanguage('en')} />
+            <TouchableOpacity
+              onPress={() => setLanguage('vi')}
+              style={[styles.langBtn, language === 'vi' && styles.langBtnActive]}
+            >
+              <Text style={language === 'vi' ? styles.langBtnTextActive : styles.langBtnText}>VI</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setLanguage('en')}
+              style={[styles.langBtn, language === 'en' && styles.langBtnActive]}
+            >
+              <Text style={language === 'en' ? styles.langBtnTextActive : styles.langBtnText}>EN</Text>
+            </TouchableOpacity>
           </View>
-          <Button title={labels.logout} onPress={handleLogout} />
+          {token ? (
+            <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+              <Text style={styles.logoutBtnText}>{labels.logout}</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
-        {loading ? <ActivityIndicator size="large" /> : null}
+        {loading ? <ActivityIndicator size="large" color="#00af50" style={{ marginVertical: 8 }} /> : null}
 
-        <ScrollView style={styles.content}>
-          {screen === 'login' ? (
-            <LoginScreen
-              language={language}
-              onLogin={(nextToken) => {
-                setToken(nextToken);
-                setScreen('profile');
-              }}
-              setLoading={setLoading}
-            />
-          ) : null}
-
-          {screen === 'register' ? (
+        <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
+          {screen === 'login' && (
+            <LoginScreen language={language} onLogin={handleLogin} setLoading={setLoading} />
+          )}
+          {screen === 'register' && (
             <RegisterScreen language={language} setLoading={setLoading} />
-          ) : null}
-
-          {screen === 'profile' ? (
+          )}
+          {screen === 'profile' && (
             <ProfileScreen
               language={language}
               token={token}
               setLoading={setLoading}
               onNeedLogin={() => setScreen('login')}
             />
-          ) : null}
+          )}
         </ScrollView>
       </View>
     </SafeAreaView>
   );
 }
+
+// ─── Login Screen ─────────────────────────────────────────────────────────────
 
 function LoginScreen({
   language,
@@ -188,27 +272,32 @@ function LoginScreen({
   setLoading,
 }: {
   language: PreferredLanguage;
-  onLogin: (token: string) => void;
-  setLoading: (value: boolean) => void;
+  onLogin: (token: string, user: User) => void;
+  setLoading: (v: boolean) => void;
 }) {
   const labels = i18n[language];
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   const submit = async () => {
+    if (!email.trim() || !password) {
+      Alert.alert('Vui lòng nhập email và mật khẩu');
+      return;
+    }
     setLoading(true);
     try {
-      const data = await requestApi<{ token: string; message: string }>('/auth/login', language, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const data = await requestApi<{ token: string; message: string; user: User }>(
+        '/auth/login',
+        language,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.trim(), password }),
         },
-        body: JSON.stringify({ email, password }),
-      });
-      onLogin(data.token);
-      Alert.alert(data.message);
+      );
+      onLogin(data.token, data.user);
     } catch (error) {
-      Alert.alert((error as Error).message);
+      Alert.alert('Đăng nhập thất bại', (error as Error).message);
     } finally {
       setLoading(false);
     }
@@ -216,8 +305,15 @@ function LoginScreen({
 
   return (
     <View style={styles.panel}>
-      <Text style={styles.header}>{labels.login}</Text>
-      <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder={labels.email} />
+      <Text style={styles.panelHeader}>{labels.login}</Text>
+      <TextInput
+        style={styles.input}
+        value={email}
+        onChangeText={setEmail}
+        placeholder={labels.email}
+        keyboardType="email-address"
+        autoCapitalize="none"
+      />
       <TextInput
         style={styles.input}
         value={password}
@@ -225,17 +321,21 @@ function LoginScreen({
         secureTextEntry
         placeholder={labels.password}
       />
-      <Button title={labels.login} onPress={submit} />
+      <TouchableOpacity style={styles.submitBtn} onPress={submit}>
+        <Text style={styles.submitBtnText}>{labels.login}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
+
+// ─── Register Screen ──────────────────────────────────────────────────────────
 
 function RegisterScreen({
   language,
   setLoading,
 }: {
   language: PreferredLanguage;
-  setLoading: (value: boolean) => void;
+  setLoading: (v: boolean) => void;
 }) {
   const labels = i18n[language];
   const [name, setName] = useState('');
@@ -250,23 +350,13 @@ function RegisterScreen({
     try {
       const data = await requestApi<{ message: string }>('/auth/register', language, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name,
-          phone,
-          email,
-          password,
-          role,
-          preferred_language: preferredLanguage,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, email, password, role, preferred_language: preferredLanguage }),
       });
-
-      Alert.alert(data.message);
+      Alert.alert('Thành công', data.message);
       setPassword('');
     } catch (error) {
-      Alert.alert((error as Error).message);
+      Alert.alert('Đăng ký thất bại', (error as Error).message);
     } finally {
       setLoading(false);
     }
@@ -274,30 +364,46 @@ function RegisterScreen({
 
   return (
     <View style={styles.panel}>
-      <Text style={styles.header}>{labels.register}</Text>
+      <Text style={styles.panelHeader}>{labels.register}</Text>
       <TextInput style={styles.input} value={name} onChangeText={setName} placeholder={labels.name} />
-      <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder={labels.phone} />
-      <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder={labels.email} />
-      <TextInput
-        style={styles.input}
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        placeholder={labels.password}
-      />
+      <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder={labels.phone} keyboardType="phone-pad" />
+      <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder={labels.email} keyboardType="email-address" autoCapitalize="none" />
+      <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder={labels.password} />
+
+      <Text style={styles.sectionLabel}>Vai trò:</Text>
       <View style={styles.inlineRow}>
-        <Button title="customer" onPress={() => setRole('customer')} />
-        <Button title="driver" onPress={() => setRole('driver')} />
-        <Button title="admin" onPress={() => setRole('admin')} />
+        {(['customer', 'driver', 'admin'] as const).map((r) => (
+          <TouchableOpacity
+            key={r}
+            onPress={() => setRole(r)}
+            style={[styles.chipBtn, role === r && styles.chipBtnActive]}
+          >
+            <Text style={[styles.chipText, role === r && styles.chipTextActive]}>{r}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
+
+      <Text style={styles.sectionLabel}>Ngôn ngữ:</Text>
       <View style={styles.inlineRow}>
-        <Button title="vi" onPress={() => setPreferredLanguage('vi')} />
-        <Button title="en" onPress={() => setPreferredLanguage('en')} />
+        {(['vi', 'en'] as const).map((l) => (
+          <TouchableOpacity
+            key={l}
+            onPress={() => setPreferredLanguage(l)}
+            style={[styles.chipBtn, preferredLanguage === l && styles.chipBtnActive]}
+          >
+            <Text style={[styles.chipText, preferredLanguage === l && styles.chipTextActive]}>{l.toUpperCase()}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
-      <Button title={labels.register} onPress={submit} />
+
+      <TouchableOpacity style={styles.submitBtn} onPress={submit}>
+        <Text style={styles.submitBtnText}>{labels.register}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
+
+// ─── Profile Screen ───────────────────────────────────────────────────────────
 
 function ProfileScreen({
   language,
@@ -307,7 +413,7 @@ function ProfileScreen({
 }: {
   language: PreferredLanguage;
   token: string;
-  setLoading: (value: boolean) => void;
+  setLoading: (v: boolean) => void;
   onNeedLogin: () => void;
 }) {
   const labels = i18n[language];
@@ -316,38 +422,27 @@ function ProfileScreen({
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [preferredLanguage, setPreferredLanguage] = useState<PreferredLanguage>('vi');
-  const [pickedImageUri, setPickedImageUri] = useState<string>('');
+  const [pickedImageUri, setPickedImageUri] = useState('');
 
   useEffect(() => {
-    if (!token) {
-      onNeedLogin();
-      return;
-    }
-
+    if (!token) { onNeedLogin(); return; }
     void loadProfile();
   }, [token]);
 
   const loadProfile = async () => {
-    if (!token) {
-      return;
-    }
-
+    if (!token) return;
     setLoading(true);
     try {
       const data = await requestApi<User>('/auth/me', language, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
-
       setProfile(data);
       setName(data.name);
       setPhone(data.phone);
       setEmail(data.email);
       setPreferredLanguage(data.preferred_language);
     } catch (error) {
-      Alert.alert((error as Error).message);
+      Alert.alert('Lỗi', (error as Error).message);
     } finally {
       setLoading(false);
     }
@@ -358,22 +453,13 @@ function ProfileScreen({
     try {
       const data = await requestApi<User>('/auth/me', language, {
         method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name,
-          phone,
-          email,
-          preferred_language: preferredLanguage,
-        }),
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, email, preferred_language: preferredLanguage }),
       });
-
       setProfile(data);
-      Alert.alert('OK');
+      Alert.alert('Đã lưu thành công');
     } catch (error) {
-      Alert.alert((error as Error).message);
+      Alert.alert('Lỗi', (error as Error).message);
     } finally {
       setLoading(false);
     }
@@ -385,22 +471,14 @@ function ProfileScreen({
       allowsEditing: true,
       quality: 0.8,
     });
-
-    if (result.canceled || !result.assets[0]) {
-      return;
+    if (!result.canceled && result.assets[0]) {
+      setPickedImageUri(result.assets[0].uri);
     }
-
-    setPickedImageUri(result.assets[0].uri);
   };
 
   const uploadAvatar = async () => {
-    if (!pickedImageUri) {
-      Alert.alert('Please pick an image first');
-      return;
-    }
-
+    if (!pickedImageUri) { Alert.alert('Chưa chọn ảnh'); return; }
     setLoading(true);
-
     try {
       const formData = new FormData();
       formData.append('avatar', {
@@ -408,19 +486,16 @@ function ProfileScreen({
         name: `avatar-${Date.now()}.jpg`,
         type: 'image/jpeg',
       } as unknown as Blob);
-
       const data = await requestApi<{ message: string; user: User }>('/auth/me/avatar', language, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
-
       setProfile(data.user);
-      Alert.alert(data.message);
+      setPickedImageUri('');
+      Alert.alert('Thành công', data.message);
     } catch (error) {
-      Alert.alert((error as Error).message);
+      Alert.alert('Lỗi', (error as Error).message);
     } finally {
       setLoading(false);
     }
@@ -430,94 +505,172 @@ function ProfileScreen({
 
   return (
     <View style={styles.panel}>
-      <Text style={styles.header}>{labels.profile}</Text>
-      <Button title={labels.refresh} onPress={loadProfile} />
-      {avatarUrl ? <Image source={{ uri: avatarUrl }} style={styles.avatar} /> : null}
-      {pickedImageUri ? <Image source={{ uri: pickedImageUri }} style={styles.avatar} /> : null}
+      <Text style={styles.panelHeader}>{labels.profile}</Text>
+      <TouchableOpacity onPress={loadProfile} style={styles.refreshSmallBtn}>
+        <Text style={styles.refreshSmallText}>{labels.refresh}</Text>
+      </TouchableOpacity>
+
+      {(avatarUrl || pickedImageUri) && (
+        <Image source={{ uri: pickedImageUri || avatarUrl }} style={styles.avatar} />
+      )}
       <View style={styles.inlineRow}>
-        <Button title={labels.pickImage} onPress={pickAvatar} />
-        <Button title={labels.uploadImage} onPress={uploadAvatar} />
+        <TouchableOpacity onPress={pickAvatar} style={styles.chipBtn}>
+          <Text style={styles.chipText}>{labels.pickImage}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={uploadAvatar} style={[styles.chipBtn, styles.chipBtnActive]}>
+          <Text style={styles.chipTextActive}>{labels.uploadImage}</Text>
+        </TouchableOpacity>
       </View>
+
       <TextInput style={styles.input} value={name} onChangeText={setName} placeholder={labels.name} />
-      <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder={labels.phone} />
-      <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder={labels.email} />
+      <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder={labels.phone} keyboardType="phone-pad" />
+      <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder={labels.email} keyboardType="email-address" autoCapitalize="none" />
+
+      <Text style={styles.sectionLabel}>Ngôn ngữ:</Text>
       <View style={styles.inlineRow}>
-        <Button title="vi" onPress={() => setPreferredLanguage('vi')} />
-        <Button title="en" onPress={() => setPreferredLanguage('en')} />
+        {(['vi', 'en'] as const).map((l) => (
+          <TouchableOpacity
+            key={l}
+            onPress={() => setPreferredLanguage(l)}
+            style={[styles.chipBtn, preferredLanguage === l && styles.chipBtnActive]}
+          >
+            <Text style={[styles.chipText, preferredLanguage === l && styles.chipTextActive]}>{l.toUpperCase()}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
-      <Button title={labels.save} onPress={save} />
+
+      <TouchableOpacity style={styles.submitBtn} onPress={save}>
+        <Text style={styles.submitBtnText}>{labels.save}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#eff5f8',
-  },
-  container: {
-    flex: 1,
-    padding: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 10,
-    color: '#10283d',
-  },
-  tabs: {
+  safeArea: { flex: 1, backgroundColor: '#f3f4f6' },
+  container: { flex: 1, padding: 16 },
+  title: { fontSize: 24, fontWeight: '700', color: '#00af50', marginBottom: 12 },
+
+  // Top bar (driver screen)
+  topBar: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
   },
+  topBarTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
+  logoutText: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
+
+  // Chat back bar
+  chatBackBar: {
+    backgroundColor: '#00af50',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  backBtn: {},
+  backBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+
+  // Tabs
+  tabs: { flexDirection: 'row', gap: 8, marginBottom: 10, flexWrap: 'wrap' },
   tabBtn: {
     borderWidth: 1,
-    borderColor: '#8da8be',
+    borderColor: '#d1d5db',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,
     backgroundColor: '#fff',
   },
-  languageRow: {
-    gap: 8,
-    marginBottom: 12,
+  tabBtnActive: { borderColor: '#00af50', backgroundColor: '#f0fdf4' },
+  tabText: { color: '#6b7280', fontSize: 13 },
+  tabTextActive: { color: '#00af50', fontWeight: '600' },
+
+  // Language row
+  languageRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  langLabel: { color: '#6b7280', fontSize: 13 },
+  langButtons: { flexDirection: 'row', gap: 6 },
+  langBtn: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#fff',
   },
-  langButtons: {
-    flexDirection: 'row',
-    gap: 8,
+  langBtnActive: { borderColor: '#00af50', backgroundColor: '#f0fdf4' },
+  langBtnText: { color: '#6b7280', fontSize: 13 },
+  langBtnTextActive: { color: '#00af50', fontWeight: '600', fontSize: 13 },
+  logoutBtn: {
+    marginLeft: 'auto',
+    backgroundColor: '#fef2f2',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#fecaca',
   },
-  content: {
-    flex: 1,
-  },
+  logoutBtnText: { color: '#ef4444', fontSize: 13, fontWeight: '600' },
+
+  content: { flex: 1 },
+
+  // Panel
   panel: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 12,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#c4d0da',
-    gap: 8,
+    borderColor: '#e5e7eb',
+    gap: 10,
+    marginBottom: 16,
   },
-  header: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
+  panelHeader: { fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 4 },
+
+  // Input
   input: {
     borderWidth: 1,
-    borderColor: '#b5c3d1',
+    borderColor: '#d1d5db',
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#f9fafb',
+    fontSize: 15,
+    color: '#111827',
+  },
+
+  // Submit button
+  submitBtn: {
+    backgroundColor: '#00af50',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  submitBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
+  // Chips
+  sectionLabel: { fontSize: 13, color: '#6b7280', marginTop: 4 },
+  inlineRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  chipBtn: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     backgroundColor: '#fff',
   },
-  inlineRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 999,
-    alignSelf: 'center',
-  },
+  chipBtnActive: { borderColor: '#00af50', backgroundColor: '#f0fdf4' },
+  chipText: { color: '#6b7280', fontSize: 13 },
+  chipTextActive: { color: '#00af50', fontWeight: '600', fontSize: 13 },
+
+  // Refresh small
+  refreshSmallBtn: { alignSelf: 'flex-end' },
+  refreshSmallText: { color: '#3b82f6', fontSize: 13 },
+
+  // Avatar
+  avatar: { width: 100, height: 100, borderRadius: 50, alignSelf: 'center' },
 });

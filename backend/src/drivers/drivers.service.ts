@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { determineRegionFromLocation, Region } from '../common/location.utils';
 import { UpdateLocationDto } from './dto/update-location.dto';
@@ -7,8 +7,6 @@ import { GetNearbyDriversDto } from './dto/get-nearby.dto';
 
 @Injectable()
 export class DriversService {
-  private readonly logger = new Logger(DriversService.name);
-
   constructor(private readonly db: DatabaseService) {}
 
   /**
@@ -39,12 +37,32 @@ export class DriversService {
   }
 
   /**
+   * Tìm region của tài xế bằng cách thử cả 2 node
+   * Dùng khi frontend không biết region (ví dụ lần đầu đăng nhập)
+   */
+  private async findDriverRegion(driverId: string): Promise<Region> {
+    const query = `SELECT region FROM drivers WHERE id = $1 LIMIT 1`;
+    for (const region of [Region.NORTH, Region.SOUTH]) {
+      try {
+        const res = await this.db.queryWithFailover(region, query, [driverId], false);
+        if (res.result.rowCount && res.result.rowCount > 0) {
+          return (res.result.rows[0].region as Region) ?? region;
+        }
+      } catch {
+        // node này không có, thử node kia
+      }
+    }
+    return Region.NORTH; // fallback cuối cùng
+  }
+
+  /**
    * Cập nhật trạng thái rảnh/bận
    */
   async updateAvailability(dto: UpdateAvailabilityDto) {
-    // Nếu Frontend không gửi Region thì mặc định phải lấy từ DB -> Cần 1 bước lấy thông tin để tự map Region (giả lập query cả 2 node nếu ko biết)
-    // Ở đây ta tối giản, giả sử frontend đã có Region khi driver đăng nhập.
-    const region = (dto.region as Region) || Region.NORTH; // Default test
+    // Nếu frontend gửi region thì dùng luôn, không thì tự tìm từ DB
+    const region: Region = dto.region
+      ? (dto.region as Region)
+      : await this.findDriverRegion(dto.driver_id);
 
     const query = `
       UPDATE drivers 
@@ -57,11 +75,12 @@ export class DriversService {
     const { result } = await this.db.queryWithFailover(region, query, values, true);
 
     if (result.rowCount === 0) {
-      throw new NotFoundException('Driver not found');
+      throw new NotFoundException(`Không tìm thấy tài xế ${dto.driver_id}`);
     }
 
     return {
       message: dto.is_available ? 'Đang sẵn sàng đón khách' : 'Đã nghỉ/bận',
+      driver: result.rows[0],
       region_routed_to: region,
     };
   }
@@ -104,24 +123,41 @@ export class DriversService {
    * Truy xuất thông tin tài xế theo ID
    */
   async getDriverById(id: string, region: Region = Region.NORTH) {
-    // Lý tưởng là query ở bảng users Global. Ở đây test với bảng Drivers phân mảnh ngầm định.
     const query = `SELECT * FROM drivers WHERE id = $1`;
     try {
-      // Cố gọi 1 Region trước, nếu không có gọi Region kia
       let res = await this.db.queryWithFailover(region, query, [id], false);
       if (res.result.rowCount === 0) {
         const fallBackRegion = region === Region.NORTH ? Region.SOUTH : Region.NORTH;
         res = await this.db.queryWithFailover(fallBackRegion, query, [id], false);
       }
-      
+
       if (res.result.rowCount === 0) {
         throw new NotFoundException('Không tìm thấy tài xế này trên bất kỳ CSDL nào.');
       }
 
       return res.result.rows[0];
-
     } catch (e) {
       throw e;
     }
+  }
+
+  /**
+   * Tìm tất cả driver records của 1 user_id trong 1 region
+   * Dùng cho mobile: sau khi login, tìm driver_id của mình
+   */
+  async getDriversByUserId(userId: number, region: Region = Region.NORTH) {
+    const query = `
+      SELECT id, user_id, vehicle_plate, vehicle_type, is_available,
+             latitude, longitude, region, rating, total_trips
+      FROM drivers
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+    `;
+    const { result, isReadOnly } = await this.db.queryWithFailover(region, query, [userId], false);
+    return {
+      data: result.rows,
+      region_routed_to: region,
+      is_read_only_fallback: isReadOnly,
+    };
   }
 }

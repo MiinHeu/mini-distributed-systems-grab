@@ -7,7 +7,7 @@ import { Trip } from './entities/trip.entity';
 export class TripsService {
   constructor(
     @InjectRepository(Trip) private readonly tripRepository: Repository<Trip>,
-    @InjectDataSource('primary') private primaryDS: DataSource,
+    @InjectDataSource() private primaryDS: DataSource,
     @InjectDataSource('replica') private replicaDS: DataSource,
   ) {}
 
