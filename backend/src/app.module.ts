@@ -7,7 +7,6 @@ import { LocationRouterService } from './router/location-router.service';
 import { DbRoutingModule } from './db-routing/db-routing.module';
 import { DbRoutingService } from './db-routing/db-routing.service';
 import { TestDbController } from './test-db/test-db.controller';
-import { TripsController } from './trips/trips.controller';
 import { ReportsController } from './reports/reports.controller';
 import { AuthModule } from './auth/auth.module';
 import { DriversModule } from './drivers/drivers.module';
@@ -52,6 +51,6 @@ import { MessagesModule } from './messages/messages.module';
     DbRoutingModule,
   ],
   controllers: [HealthController, TestDbController, ReportsController, AppController],
-  providers: [HealthService, AppService],
+  providers: [HealthService, LocationRouterService, DbRoutingService, AppService],
 })
 export class AppModule {}

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="780" viewBox="0 0 1100 780">
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#111827"/></marker><style>.title{font:700 30px Arial;fill:#111827}.box{fill:#f8fafc;stroke:#111827;stroke-width:2;rx:10}.decision{fill:#fff7ed;stroke:#fb923c;stroke-width:2}.end{fill:#ecfdf5;stroke:#10b981;stroke-width:2;rx:10}.txt{font:15px Arial;fill:#111827}.small{font:13px Arial;fill:#374151}.arrow{stroke:#111827;stroke-width:2;marker-end:url(#arrow)}</style></defs>
+  <rect width="1100" height="780" fill="white"/><text x="40" y="50" class="title">Activity - Khach theo doi tai xe real-time</text>
+  <g transform="translate(390,95)">
+    <rect class="box" x="0" y="0" width="320" height="55"/><text class="txt" x="160" y="34" text-anchor="middle">Mo TripTrackingScreen</text>
+    <line class="arrow" x1="160" y1="55" x2="160" y2="95"/>
+    <rect class="box" x="0" y="95" width="320" height="55"/><text class="txt" x="160" y="129" text-anchor="middle">Ket noi WebSocket</text>
+    <line class="arrow" x1="160" y1="150" x2="160" y2="190"/>
+    <rect class="box" x="0" y="190" width="320" height="55"/><text class="txt" x="160" y="224" text-anchor="middle">Emit trip:join {tripId}</text>
+    <line class="arrow" x1="160" y1="245" x2="160" y2="285"/>
+    <polygon class="decision" points="160,285 320,340 160,395 0,340"/><text class="txt" x="160" y="344" text-anchor="middle">Nhan event nao?</text>
+    <line class="arrow" x1="0" y1="340" x2="-190" y2="340"/><text class="small" x="-120" y="325">trip:accepted</text>
+    <rect class="box" x="-490" y="313" width="270" height="55"/><text class="txt" x="-355" y="347" text-anchor="middle">Hien thi tai xe da nhan</text>
+    <line class="arrow" x1="320" y1="340" x2="510" y2="340"/><text class="small" x="380" y="325">driver:location</text>
+    <rect class="box" x="540" y="313" width="270" height="55"/><text class="txt" x="675" y="347" text-anchor="middle">Cap nhat marker + ETA</text>
+    <line class="arrow" x1="160" y1="395" x2="160" y2="445"/><text class="small" x="180" y="420">trip:status</text>
+    <polygon class="decision" points="160,445 320,500 160,555 0,500"/><text class="txt" x="160" y="504" text-anchor="middle">completed?</text>
+    <line class="arrow" x1="0" y1="500" x2="-190" y2="500"/><text class="small" x="-125" y="485">Chua</text>
+    <rect class="box" x="-490" y="473" width="270" height="55"/><text class="txt" x="-355" y="507" text-anchor="middle">Tiep tuc lang nghe</text>
+    <line class="arrow" x1="160" y1="555" x2="160" y2="605"/><text class="small" x="180" y="580">Roi</text>
+    <rect class="end" x="0" y="605" width="320" height="55"/><text class="txt" x="160" y="639" text-anchor="middle">Ket thuc tracking</text>
+  </g>
+</svg>
