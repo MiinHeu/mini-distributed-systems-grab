@@ -153,4 +153,36 @@ export class PaymentsService {
 
     return result[0];
   }
+  async getPaymentHistory(userId: number) {
+  return this.primaryDS.query(
+    `SELECT p.*, t.pickup_address, t.dropoff_address, u.name as customer_name
+     FROM payments p
+     JOIN trips t ON p.trip_id = t.id
+     JOIN users u ON t.customer_id = u.id
+     WHERE u.id = $1
+     ORDER BY p.created_at DESC`,
+    [userId],
+  );
+}
+
+async getAllPayments(status?: string) {
+  if (status) {
+    return this.primaryDS.query(
+      `SELECT p.*, t.pickup_address, t.dropoff_address, u.name as customer_name
+       FROM payments p
+       JOIN trips t ON p.trip_id = t.id
+       JOIN users u ON t.customer_id = u.id
+       WHERE p.status = $1
+       ORDER BY p.created_at DESC`,
+      [status],
+    );
+  }
+  return this.primaryDS.query(
+    `SELECT p.*, t.pickup_address, t.dropoff_address, u.name as customer_name
+     FROM payments p
+     JOIN trips t ON p.trip_id = t.id
+     JOIN users u ON t.customer_id = u.id
+     ORDER BY p.created_at DESC`,
+  );
+}
 }

@@ -23,4 +23,15 @@ export class PaymentsController {
   getPayment(@Param('trip_id') tripId: string) {
     return this.paymentsService.getPaymentByTrip(+tripId);
   }
+  @UseGuards(JwtAuthGuard)
+@Get('history')
+getHistory(@Req() req) {
+  return this.paymentsService.getPaymentHistory(req.user.userId);
+}
+
+@UseGuards(JwtAuthGuard)
+@Get('admin/all')
+getAllPayments(@Query('status') status?: string) {
+  return this.paymentsService.getAllPayments(status);
+}
 }

@@ -5,6 +5,7 @@ import SystemMonitor from './SystemMonitor'
 import Dashboard from './Dashboard'
 import AdminUsers from './AdminUsers'
 import AdminDrivers from './AdminDrivers'
+import AdminPayments from './AdminPayments'
 import './App.css'
 
 type PreferredLanguage = 'vi' | 'en'
@@ -582,7 +583,7 @@ function RequireAuth({
 }
 
 function AdminDashboard() {
-  const [tab, setTab] = useState<'users' | 'drivers'>('users');
+  const [tab, setTab] = useState<'users' | 'drivers' | 'payments'>('users');
 
   return (
     <div style={{ minHeight: '100vh', background: '#13131f', color: 'white', fontFamily: 'sans-serif', margin: '-1.5rem -1rem' }}>
@@ -594,6 +595,9 @@ function AdminDashboard() {
         <button onClick={() => setTab('drivers')} style={{ ...navBtn, borderBottom: tab === 'drivers' ? '2px solid #00b894' : '2px solid transparent', color: tab === 'drivers' ? '#00b894' : '#aaa' }}>
           🚗 Quản lý Tài xế
         </button>
+        <button onClick={() => setTab('payments')} style={{ ...navBtn, borderBottom: tab === 'payments' ? '2px solid #fdcb6e' : '2px solid transparent', color: tab === 'payments' ? '#fdcb6e' : '#aaa' }}>
+  💳 Thanh toán
+</button>
       </nav>
 
       <div style={{ display: tab === 'users' ? 'block' : 'none' }}>
@@ -602,6 +606,9 @@ function AdminDashboard() {
       <div style={{ display: tab === 'drivers' ? 'block' : 'none' }}>
         <AdminDrivers />
       </div>
+      <div style={{ display: tab === 'payments' ? 'block' : 'none' }}>
+  <AdminPayments />
+</div>
     </div>
   );
 }
