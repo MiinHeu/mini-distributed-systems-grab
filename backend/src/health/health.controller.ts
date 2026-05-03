@@ -6,31 +6,58 @@ import { ok } from '../common/api-response';
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
+  /** GET /health — Full status of all 4 nodes + replication + latency */
   @Get()
   async check() {
-    const snapshot = this.healthService.snapshot();
+    const full = this.healthService.getFullHealth();
+    return ok(full);
+  }
 
+  /** GET /health/north — Detail for North region */
+  @Get('north')
+  async healthNorth() {
+    const full = this.healthService.getFullHealth();
     return ok({
       nodes: {
-        northPrimary: snapshot.northPrimary ? 'online' : 'offline',
-        northReplica: snapshot.northReplica ? 'online' : 'offline',
-        southPrimary: snapshot.southPrimary ? 'online' : 'offline',
-        southReplica: snapshot.southReplica ? 'online' : 'offline',
+        northPrimary: full.nodes.northPrimary,
+        northReplica: full.nodes.northReplica,
       },
       serviceLevel: {
-        north: this.healthService.serviceLevelForRegion('north'),
-        south: this.healthService.serviceLevelForRegion('south'),
+        north: full.serviceLevel.north,
       },
+      replication: {
+        north: full.replication.north,
+      },
+      lastCheckedAt: full.lastCheckedAt,
+      uptimeSeconds: full.uptimeSeconds,
     });
   }
 
-  @Get('north')
-  async healthNorth() {
-    return this.healthService.snapshot();
-  }
-
+  /** GET /health/south — Detail for South region */
   @Get('south')
   async healthSouth() {
-    return this.healthService.snapshot();
+    const full = this.healthService.getFullHealth();
+    return ok({
+      nodes: {
+        southPrimary: full.nodes.southPrimary,
+        southReplica: full.nodes.southReplica,
+      },
+      serviceLevel: {
+        south: full.serviceLevel.south,
+      },
+      replication: {
+        south: full.replication.south,
+      },
+      lastCheckedAt: full.lastCheckedAt,
+      uptimeSeconds: full.uptimeSeconds,
+    });
+  }
+
+  /** GET /health/history — Server-side event timeline */
+  @Get('history')
+  async healthHistory() {
+    return ok({
+      timeline: this.healthService.getTimeline(),
+    });
   }
 }

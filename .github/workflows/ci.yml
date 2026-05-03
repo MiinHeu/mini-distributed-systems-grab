@@ -1,17 +1,15 @@
-name: Backend CI
+name: CI Pipeline — Mini Grab
 
 on:
   push:
-    branches:
-      - main
-      - develop
+    branches: [main, develop]
   pull_request:
-    branches:
-      - main
-      - develop
+    branches: [main, develop]
 
 jobs:
-  build-and-test:
+  # ─── Backend: Lint + Test + Build ───
+  backend:
+    name: 🔧 Backend CI
     runs-on: ubuntu-latest
     env:
       POSTGRES_USER: rideshare_admin
@@ -55,3 +53,52 @@ jobs:
 
       - name: Build Project
         run: npm run build
+
+  # ─── Web Frontend: Lint + Build ───
+  web:
+    name: 🌐 Web Frontend CI
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  # ─── Docker Compose Validation ───
+  docker-validate:
+    name: 🐳 Docker Compose Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate root docker-compose.yml
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Validate DB docker-compose.yml
+        run: |
+          if [ -f DB/docker-compose.yml ]; then
+            docker compose -f DB/docker-compose.yml config --quiet
+          else
+            echo "DB/docker-compose.yml not found, skipping"
+          fi

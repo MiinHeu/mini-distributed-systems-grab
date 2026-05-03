@@ -23,7 +23,12 @@ export class DriversService {
     const values = [dto.latitude, dto.longitude, region, dto.driver_id];
 
     // isWriteRequest = true -> Bắt buộc dùng Primary. Nếu sập sẽ throw error cho client xử lý.
-    const { result } = await this.db.queryWithFailover(region, query, values, true);
+    const { result } = await this.db.queryWithFailover(
+      region,
+      query,
+      values,
+      true,
+    );
 
     if (result.rowCount === 0) {
       throw new NotFoundException(`Không tìm thấy tài xế ${dto.driver_id}`);
@@ -72,7 +77,12 @@ export class DriversService {
     `;
     const values = [dto.is_available, dto.driver_id];
 
-    const { result } = await this.db.queryWithFailover(region, query, values, true);
+    const { result } = await this.db.queryWithFailover(
+      region,
+      query,
+      values,
+      true,
+    );
 
     if (result.rowCount === 0) {
       throw new NotFoundException(`Không tìm thấy tài xế ${dto.driver_id}`);
@@ -107,7 +117,12 @@ export class DriversService {
     const values = [dto.lat, dto.lng, dto.vehicle_type, radiusMeters];
 
     // isWriteRequest = false -> Được phép Fallback Read-Only Mode bằng Replica nếu Primary sập
-    const { result, isReadOnly } = await this.db.queryWithFailover(region, query, values, false);
+    const { result, isReadOnly } = await this.db.queryWithFailover(
+      region,
+      query,
+      values,
+      false,
+    );
 
     return {
       metadata: {
@@ -127,12 +142,20 @@ export class DriversService {
     try {
       let res = await this.db.queryWithFailover(region, query, [id], false);
       if (res.result.rowCount === 0) {
-        const fallBackRegion = region === Region.NORTH ? Region.SOUTH : Region.NORTH;
-        res = await this.db.queryWithFailover(fallBackRegion, query, [id], false);
+        const fallBackRegion =
+          region === Region.NORTH ? Region.SOUTH : Region.NORTH;
+        res = await this.db.queryWithFailover(
+          fallBackRegion,
+          query,
+          [id],
+          false,
+        );
       }
 
       if (res.result.rowCount === 0) {
-        throw new NotFoundException('Không tìm thấy tài xế này trên bất kỳ CSDL nào.');
+        throw new NotFoundException(
+          'Không tìm thấy tài xế này trên bất kỳ CSDL nào.',
+        );
       }
 
       return res.result.rows[0];

@@ -61,7 +61,10 @@ export class AuthService {
   private userSelectColumns =
     'id, name, phone, email, role, avatar_url, preferred_language, created_at, updated_at';
 
-  resolveLanguage(languageRaw?: string | null, preferred?: PreferredLanguage): PreferredLanguage {
+  resolveLanguage(
+    languageRaw?: string | null,
+    preferred?: PreferredLanguage,
+  ): PreferredLanguage {
     if (preferred === 'vi' || preferred === 'en') {
       return preferred;
     }
@@ -93,7 +96,9 @@ export class AuthService {
     return 'customer';
   }
 
-  private normalizePreferredLanguage(lang?: PreferredLanguage): PreferredLanguage {
+  private normalizePreferredLanguage(
+    lang?: PreferredLanguage,
+  ): PreferredLanguage {
     if (lang === 'en' || lang === 'vi') {
       return lang;
     }
@@ -121,7 +126,9 @@ export class AuthService {
     const password = input.password;
 
     if (!name || !phone || !email || !password) {
-      throw new BadRequestException('name, phone, email, password are required');
+      throw new BadRequestException(
+        'name, phone, email, password are required',
+      );
     }
 
     if (password.length < 6) {
@@ -130,7 +137,9 @@ export class AuthService {
 
     const normalizedEmail = this.normalizeEmail(email);
     const role = this.normalizeRole(input.role);
-    const preferredLanguage = this.normalizePreferredLanguage(input.preferred_language);
+    const preferredLanguage = this.normalizePreferredLanguage(
+      input.preferred_language,
+    );
 
     const existed = await this.database.northPrimary.query(
       'SELECT id FROM users WHERE email = $1 LIMIT 1',
@@ -213,7 +222,9 @@ export class AuthService {
       if (
         typeof payload === 'string' ||
         typeof payload.sub !== 'number' ||
-        (payload.role !== 'customer' && payload.role !== 'driver' && payload.role !== 'admin') ||
+        (payload.role !== 'customer' &&
+          payload.role !== 'driver' &&
+          payload.role !== 'admin') ||
         typeof payload.email !== 'string'
       ) {
         throw new UnauthorizedException('invalid token payload');
@@ -281,7 +292,10 @@ export class AuthService {
       pushUpdate('avatar_url', input.avatar_url.trim());
     }
 
-    if (input.preferred_language === 'vi' || input.preferred_language === 'en') {
+    if (
+      input.preferred_language === 'vi' ||
+      input.preferred_language === 'en'
+    ) {
       pushUpdate('preferred_language', input.preferred_language);
     }
 
