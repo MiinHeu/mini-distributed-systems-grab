@@ -8,7 +8,7 @@ import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { DatabaseService } from '../database/database.service';
 import { Region } from '../common/location.utils';
-import { Trip } from './entities/trip.entity';
+import { Trip, TripStatus } from './entities/trip.entity';
 
 @Injectable()
 export class TripsService {
@@ -22,7 +22,7 @@ export class TripsService {
   async bookTripLegacy(data: Partial<Trip>) {
     const trip = this.tripRepository.create({
       ...data,
-      status: 'pending',
+      status: TripStatus.PENDING,
     });
     return await this.tripRepository.save(trip);
   }
@@ -34,7 +34,7 @@ export class TripsService {
   async cancelTrip(id: number) {
     const trip = await this.tripRepository.findOne({ where: { id } });
     if (!trip) return { message: 'Trip not found' };
-    trip.status = 'cancelled';
+    trip.status = TripStatus.CANCELLED;
     return await this.tripRepository.save(trip);
   }
 

@@ -12,4 +12,4 @@ export class EstimateTripDto {
 
   @IsNumber()
   dropoff_lng: number;
-}   
+}
