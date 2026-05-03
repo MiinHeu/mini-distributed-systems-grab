@@ -3,12 +3,16 @@ import {
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
+import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import { DatabaseService } from '../database/database.service';
 import { Region } from '../common/location.utils';
 import { Trip, TripStatus } from './entities/trip.entity';
+import { EstimateTripDto } from './dto/estimate-trip.dto';
 
 @Injectable()
 export class TripsService {
@@ -17,6 +21,7 @@ export class TripsService {
     @InjectDataSource() private primaryDS: DataSource,
     @InjectDataSource('replica') private replicaDS: DataSource,
     private readonly database: DatabaseService,
+    private readonly httpService: HttpService,
   ) {}
 
   async bookTripLegacy(data: Partial<Trip>) {
@@ -181,5 +186,43 @@ export class TripsService {
       }
     }
     throw new NotFoundException('Trip not found');
+  }
+
+  /**
+   * Tính tiền ước tính dựa trên tọa độ — dùng OSRM (free, không cần API key)
+   * Người 2 — Tầng 2: POST /trips/estimate
+   */
+  async estimateTrip(body: EstimateTripDto) {
+    const { pickup_lat, pickup_lng, dropoff_lat, dropoff_lng } = body;
+
+    const osrmUrl =
+      `https://router.project-osrm.org/route/v1/driving/` +
+      `${pickup_lng},${pickup_lat};${dropoff_lng},${dropoff_lat}` +
+      `?overview=full&geometries=geojson`;
+
+    try {
+      const response = await firstValueFrom(this.httpService.get(osrmUrl));
+      const route = response.data?.routes?.[0];
+
+      if (!route) {
+        throw new BadRequestException('Không tính được quãng đường từ OSRM');
+      }
+
+      const distance_km = route.distance / 1000;
+      const duration_minutes = route.duration / 60;
+      const base_fare = 10000;
+      const price_per_km = 5000;
+      const estimated_fare = Math.round(base_fare + distance_km * price_per_km);
+
+      return {
+        distance_km: Number(distance_km.toFixed(2)),
+        estimated_fare,
+        duration_minutes: Number(duration_minutes.toFixed(1)),
+        route: route.geometry,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException('Không thể kết nối đến dịch vụ tính đường đi');
+    }
   }
 }

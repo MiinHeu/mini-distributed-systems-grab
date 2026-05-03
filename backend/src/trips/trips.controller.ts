@@ -17,6 +17,7 @@ import { ok } from '../common/api-response';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TripsGateway } from './trips.gateway';
 import { TripsService } from './trips.service';
+import { EstimateTripDto } from './dto/estimate-trip.dto';
 
 class BookTripDto {
   latitude: number;
@@ -128,5 +129,14 @@ export class TripsController {
   @Post('book')
   async bookTrip(@Body() body: BookTripDto, @Req() req) {
     return this.tripsService.bookTrip(body, req.user.userId || req.user.id);
+  }
+
+  /**
+   * POST /trips/estimate
+   * Tính tiền ước tính theo tọa độ — Người 2 Tầng 2
+   */
+  @Post('estimate')
+  estimateTrip(@Body() body: EstimateTripDto) {
+    return this.tripsService.estimateTrip(body);
   }
 }
