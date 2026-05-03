@@ -16,6 +16,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AdminModule } from './admin/admin.module';
 import { MessagesModule } from './messages/messages.module';
+import { RatingsModule } from './ratings/ratings.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -34,6 +36,7 @@ import { MessagesModule } from './messages/messages.module';
       database: process.env.POSTGRES_DB,
       synchronize: false,
       connectTimeoutMS: 3000,
+      entities: [__dirname + '/**/*.entity{.ts,.js}'],
     }),
     // South REPLICA
     TypeOrmModule.forRoot({
@@ -45,10 +48,13 @@ import { MessagesModule } from './messages/messages.module';
       password: process.env.POSTGRES_PASSWORD,
       database: process.env.POSTGRES_DB,
       synchronize: false,
+      entities: [__dirname + '/**/*.entity{.ts,.js}'],
     }),
     TripsModule,
     AdminModule,
     DbRoutingModule,
+    RatingsModule,
+    PaymentsModule,
   ],
   controllers: [HealthController, TestDbController, ReportsController, AppController],
   providers: [HealthService, LocationRouterService, DbRoutingService, AppService],

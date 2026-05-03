@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: Admin@123456
       POSTGRES_DB: rideshare_db
     ports:
-      - "5434:5432"
+      - "5534:5432"
     volumes:
       - south_primary_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
@@ -30,11 +30,23 @@ services:
       POSTGRES_PASSWORD: Admin@123456
       POSTGRES_DB: rideshare_db
     ports:
-      - "5435:5432"
+      - "5535:5432"
     volumes:
       - south_replica_data:/var/lib/postgresql/data
     depends_on:
       - south-primary
+    command: >
+      bash -c "
+      if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
+        export PGPASSWORD=Admin@123456
+        while true; do
+          rm -rf /var/lib/postgresql/data/*
+          pg_basebackup -h south-primary -D /var/lib/postgresql/data -U replicator -Fp -Xs -R && break
+          echo 'Waiting for primary to configure replication...'
+          sleep 5
+        done
+      fi;
+      docker-entrypoint.sh postgres"
 
   # ========== NORTH PRIMARY ==========
   north-primary:
@@ -45,9 +57,10 @@ services:
       POSTGRES_PASSWORD: Admin@123456
       POSTGRES_DB: rideshare_db
     ports:
-      - "5432:5432"
+      - "5532:5432"
     volumes:
       - north_primary_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
     command: |
       postgres
       -c wal_level=replica
@@ -63,11 +76,149 @@ services:
       POSTGRES_PASSWORD: Admin@123456
       POSTGRES_DB: rideshare_db
     ports:
-      - "5433:5432"
+      - "5533:5432"
     volumes:
       - north_replica_data:/var/lib/postgresql/data
     depends_on:
       - north-primary
+    command: >
+      bash -c "
+      if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
+        export PGPASSWORD=Admin@123456
+        while true; do
+          rm -rf /var/lib/postgresql/data/*
+          pg_basebackup -h north-primary -D /var/lib/postgresql/data -U replicator -Fp -Xs -R && break
+          echo 'Waiting for primary to configure replication...'
+          sleep 5
+        done
+      fi;
+      docker-entrypoint.sh postgres"
+
+  # ========== PGBOUNCER POOLS ==========
+  south-primary-pool:
+    image: edoburu/pgbouncer:latest
+    container_name: south-primary-pool
+    environment:
+      DB_HOST: south-primary
+      DB_PORT: 5432
+      DB_USER: rideshare_admin
+      DB_PASSWORD: Admin@123456
+      LISTEN_PORT: 6432
+      POOL_MODE: transaction
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "5434:6432"
+    depends_on:
+      - south-primary
+
+  south-replica-pool:
+    image: edoburu/pgbouncer:latest
+    container_name: south-replica-pool
+    environment:
+      DB_HOST: south-replica
+      DB_PORT: 5432
+      DB_USER: rideshare_admin
+      DB_PASSWORD: Admin@123456
+      LISTEN_PORT: 6432
+      POOL_MODE: transaction
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "5435:6432"
+    depends_on:
+      - south-replica
+
+  north-primary-pool:
+    image: edoburu/pgbouncer:latest
+    container_name: north-primary-pool
+    environment:
+      DB_HOST: north-primary
+      DB_PORT: 5432
+      DB_USER: rideshare_admin
+      DB_PASSWORD: Admin@123456
+      LISTEN_PORT: 6432
+      POOL_MODE: transaction
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "5432:6432"
+    depends_on:
+      - north-primary
+
+  north-replica-pool:
+    image: edoburu/pgbouncer:latest
+    container_name: north-replica-pool
+    environment:
+      DB_HOST: north-replica
+      DB_PORT: 5432
+      DB_USER: rideshare_admin
+      DB_PASSWORD: Admin@123456
+      LISTEN_PORT: 6432
+      POOL_MODE: transaction
+      AUTH_TYPE: scram-sha-256
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    ports:
+      - "5433:6432"
+    depends_on:
+      - north-replica
+
+  # ========== MONITORING ==========
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+  postgres-exporter-north-primary:
+    image: quay.io/prometheuscommunity/postgres-exporter
+    container_name: postgres-exporter-north-primary
+    environment:
+      DATA_SOURCE_NAME: "postgresql://rideshare_admin:Admin@123456@north-primary:5432/rideshare_db?sslmode=disable"
+    ports:
+      - "9187:9187"
+    depends_on:
+      - north-primary
+
+  postgres-exporter-north-replica:
+    image: quay.io/prometheuscommunity/postgres-exporter
+    container_name: postgres-exporter-north-replica
+    environment:
+      DATA_SOURCE_NAME: "postgresql://rideshare_admin:Admin@123456@north-replica:5432/rideshare_db?sslmode=disable"
+    ports:
+      - "9188:9187"
+    depends_on:
+      - north-replica
+
+  postgres-exporter-south-primary:
+    image: quay.io/prometheuscommunity/postgres-exporter
+    container_name: postgres-exporter-south-primary
+    environment:
+      DATA_SOURCE_NAME: "postgresql://rideshare_admin:Admin@123456@south-primary:5432/rideshare_db?sslmode=disable"
+    ports:
+      - "9189:9187"
+    depends_on:
+      - south-primary
+
+  postgres-exporter-south-replica:
+    image: quay.io/prometheuscommunity/postgres-exporter
+    container_name: postgres-exporter-south-replica
+    environment:
+      DATA_SOURCE_NAME: "postgresql://rideshare_admin:Admin@123456@south-replica:5432/rideshare_db?sslmode=disable"
+    ports:
+      - "9190:9187"
+    depends_on:
+      - south-replica
 
 volumes:
   south_primary_data:
