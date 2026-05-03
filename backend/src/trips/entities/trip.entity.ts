@@ -3,9 +3,24 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
-@Entity()
+export enum TripStatus {
+  PENDING = 'pending',
+  ACCEPTED = 'accepted',
+  COMPLETED = 'completed',
+  CANCELLED = 'cancelled',
+}
+
+export enum TripRegion {
+  NORTH = 'NORTH',
+  SOUTH = 'SOUTH',
+}
+
+@Entity('trips')
+@Index('idx_trips_status_region', ['status', 'region'])
 export class Trip {
   @PrimaryGeneratedColumn()
   id: number;
@@ -34,11 +49,18 @@ export class Trip {
   @Column('double precision')
   dropoff_lng: number;
 
-  @Column({ default: 'pending' })
-  status: string;
+  @Column({
+    type: 'enum',
+    enum: TripStatus,
+    default: TripStatus.PENDING,
+  })
+  status: TripStatus;
 
-  @Column()
-  region: string;
+  @Column({
+    type: 'enum',
+    enum: TripRegion,
+  })
+  region: TripRegion;
 
   @Column('double precision', { nullable: true })
   distance_km: number;
@@ -49,6 +71,9 @@ export class Trip {
   @CreateDateColumn()
   created_at: Date;
 
-  @Column({ nullable: true })
+  @UpdateDateColumn()
+  updated_at: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
   completed_at: Date;
 }
