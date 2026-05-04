@@ -6,8 +6,8 @@ export default function AdminDrivers() {
 
   useEffect(() => {
     const url = region
-      ? `http://localhost:3000/admin/drivers?region=${region}`
-      : `http://localhost:3000/admin/drivers`;
+      ? `/admin/drivers?region=${region}`
+      : `/admin/drivers`;
     fetch(url).then(res => res.json()).then(data => setDrivers(data));
   }, [region]);
 

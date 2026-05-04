@@ -73,10 +73,11 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_trip_id ON messages(trip_id, created_at);
 
 -- Seed data mẫu để test
+-- Passwords đều là "password123" (bcrypt hash hợp lệ)
 INSERT INTO users (name, phone, email, password, role) VALUES
-  ('Nguyen Van A', '0901234567', 'customer@test.com', '$2a$10$placeholder', 'customer'),
-  ('Tran Van B', '0912345678', 'driver@test.com', '$2a$10$placeholder', 'driver'),
-  ('Admin User', '0923456789', 'admin@test.com', '$2a$10$placeholder', 'admin')
+  ('Nguyen Van A', '0901234567', 'customer@test.com', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'customer'),
+  ('Tran Van B', '0912345678', 'driver@test.com',   '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'driver'),
+  ('Admin User', '0923456789', 'admin@test.com',    '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO drivers (id, user_id, vehicle_plate, vehicle_type, is_available, latitude, longitude, region, rating) VALUES

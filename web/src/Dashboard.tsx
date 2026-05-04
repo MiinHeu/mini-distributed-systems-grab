@@ -4,7 +4,7 @@ import {
   LineChart, Line, ResponsiveContainer,
 } from 'recharts'
 
-const API = 'http://localhost:3000'
+const API = ''
 
 type RevenueRow = { region: string; total_trips: number; total_revenue: string; avg_fare: string }
 type TripRow = { date: string; region: string; total: number }

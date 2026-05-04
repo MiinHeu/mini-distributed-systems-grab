@@ -21,4 +21,4 @@ END
 \$\$;
 EOSQL
 
-echo "host replication replicator all scram-sha-256" >> "$PGDATA/pg_hba.conf"
+echo "host replication replicator all md5" >> "$PGDATA/pg_hba.conf"

@@ -11,7 +11,7 @@ export default function AdminUsers() {
   const [search, setSearch] = useState('');
 
   const fetchUsers = () => {
-    fetch('http://localhost:3000/admin/users')
+    fetch('/admin/users')
       .then(res => res.json())
       .then(data => setUsers(data));
   };
@@ -26,14 +26,14 @@ export default function AdminUsers() {
   );
 
   const handleSuspend = (id: string) => {
-    fetch(`http://localhost:3000/admin/users/${id}/suspend`, { method: 'PATCH' })
+    fetch(`/admin/users/${id}/suspend`, { method: 'PATCH' })
       .then(() => setUsers(prev => prev.map(u =>
         u.id === id ? { ...u, is_suspended: true } : u
       )));
   };
 
   const handleUnsuspend = (id: string) => {
-    fetch(`http://localhost:3000/admin/users/${id}/unsuspend`, { method: 'PATCH' })
+    fetch(`/admin/users/${id}/unsuspend`, { method: 'PATCH' })
       .then(() => setUsers(prev => prev.map(u =>
         u.id === id ? { ...u, is_suspended: false } : u
       )));
@@ -41,7 +41,7 @@ export default function AdminUsers() {
 
   const handleDelete = (id: string) => {
     if (!confirm('Bạn chắc chắn muốn xóa user này?')) return;
-    fetch(`http://localhost:3000/admin/users/${id}`, { method: 'DELETE' })
+    fetch(`/admin/users/${id}`, { method: 'DELETE' })
       .then(() => setUsers(prev => prev.filter(u => u.id !== id)));
   };
 

@@ -17,7 +17,7 @@ type HealthData = {
 }
 type TimelineEntry = { timestamp: string; changes: string[] }
 
-const API = import.meta.env.VITE_API_BASE ?? 'http://localhost:3000'
+const API = import.meta.env.VITE_API_BASE ?? ''
 
 export default function SystemMonitor() {
   const [health, setHealth] = useState<HealthData | null>(null)
