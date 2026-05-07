@@ -9,7 +9,7 @@ import { DataSource } from 'typeorm';
 @Injectable()
 export class RatingsService {
   constructor(
-    @InjectDataSource('primary') private primaryDS: DataSource,
+    @InjectDataSource() private primaryDS: DataSource,
   ) {}
 
   async createRating(body: any, customerId: number) {

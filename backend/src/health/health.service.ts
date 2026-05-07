@@ -52,6 +52,10 @@ export type FullHealthResponse = {
   };
   lastCheckedAt: string | null;
   uptimeSeconds: number;
+  tripCounts: {
+    north: number;
+    south: number;
+  };
 };
 
 @Injectable()
@@ -81,6 +85,7 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
   };
 
   private lastCheckedAt: string | null = null;
+  private tripCounts = { north: 0, south: 0 };
 
   // Server-side timeline (last 100 events)
   private timeline: HealthTimelineEntry[] = [];
@@ -221,6 +226,26 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
       north: northRepl,
       south: southRepl,
     };
+
+    // Đếm số lượng chuyến đi trong từng vùng
+    const [northCount, southCount] = await Promise.all([
+      newStatuses.northPrimary || newStatuses.northReplica
+        ? (async () => {
+            const ds = newStatuses.northPrimary ? this.databaseService.northPrimary : this.databaseService.northReplica;
+            const res = await ds.query('SELECT COUNT(*) FROM trips');
+            return parseInt(res.rows[0].count);
+          })()
+        : Promise.resolve(0),
+      newStatuses.southPrimary || newStatuses.southReplica
+        ? (async () => {
+            const ds = newStatuses.southPrimary ? this.databaseService.southPrimary : this.databaseService.southReplica;
+            const res = await ds.query('SELECT COUNT(*) FROM trips');
+            return parseInt(res.rows[0].count);
+          })()
+        : Promise.resolve(0),
+    ]);
+
+    this.tripCounts = { north: northCount, south: southCount };
   }
 
   snapshot(): HealthSnapshot {
@@ -258,6 +283,7 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
       },
       lastCheckedAt: this.lastCheckedAt,
       uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1000),
+      tripCounts: this.tripCounts,
     };
   }
 

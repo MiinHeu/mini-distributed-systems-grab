@@ -14,6 +14,7 @@ type HealthData = {
   replication: { north: RegionRepl; south: RegionRepl }
   lastCheckedAt: string | null
   uptimeSeconds: number
+  tripCounts: { north: number; south: number }
 }
 type TimelineEntry = { timestamp: string; changes: string[] }
 
@@ -132,6 +133,10 @@ function OverviewTab({ health, nodeColor, svcColor, svcGlow }: { health: HealthD
                 <div>
                   <div style={{ fontSize: 12, color: '#5a6380', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>{r === 'north' ? '🔵 Miền Bắc' : '🔴 Miền Nam'}</div>
                   <div style={{ fontSize: 28, fontWeight: 800, marginTop: 4, color: svcColor(level) }}>{level.toUpperCase()}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                   <div style={{ fontSize: 12, color: '#5a6380', fontWeight: 600 }}>DỮ LIỆU THỰC TẾ</div>
+                   <div style={{ fontSize: 24, fontWeight: 900, color: '#ffffff' }}>{health.tripCounts[r]} Chuyến</div>
                 </div>
                 <div style={{ width: 48, height: 48, borderRadius: '50%', background: `${svcColor(level)}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${svcColor(level)}40` }}>
                   <div style={{ width: 16, height: 16, borderRadius: '50%', background: svcColor(level), animation: level === 'full' ? 'pulse 2s infinite' : level === 'unavailable' ? 'glow 1s infinite' : 'none', color: svcColor(level) }} />

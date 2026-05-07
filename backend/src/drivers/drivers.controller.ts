@@ -1,13 +1,15 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Logger, Param, ParseIntPipe, Patch, Query, UseGuards } from '@nestjs/common';
 import { DriversService } from './drivers.service';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
 import { GetNearbyDriversDto } from './dto/get-nearby.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { ok } from '../common/api-response';
 import { Region } from '../common/location.utils';
 
 @Controller('drivers')
 export class DriversController {
+  private readonly logger = new Logger(DriversController.name);
   constructor(private readonly driversService: DriversService) {}
 
   @UseGuards(JwtAuthGuard)
@@ -19,6 +21,7 @@ export class DriversController {
   @UseGuards(JwtAuthGuard)
   @Patch('availability')
   async updateAvailability(@Body() dto: UpdateAvailabilityDto) {
+    this.logger.log(`Nhận yêu cầu availability: ${JSON.stringify(dto)}`);
     return this.driversService.updateAvailability(dto);
   }
 
@@ -39,7 +42,8 @@ export class DriversController {
     @Query('region') region?: string,
   ) {
     const resolvedRegion = (region as Region) ?? Region.NORTH;
-    return this.driversService.getDriversByUserId(userId, resolvedRegion);
+    const data = await this.driversService.getDriversByUserId(userId, resolvedRegion);
+    return ok(data);
   }
 
   @Get(':id')

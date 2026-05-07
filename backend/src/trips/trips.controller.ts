@@ -12,6 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { IsNumber, IsOptional, IsString } from 'class-validator';
 import { DbRoutingService } from '../db-routing/db-routing.service';
 import { ok } from '../common/api-response';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -20,9 +21,31 @@ import { TripsService } from './trips.service';
 import { EstimateTripDto } from './dto/estimate-trip.dto';
 
 class BookTripDto {
-  latitude: number;
+  @IsNumber()
+  pickup_lat: number;
+
+  @IsNumber()
+  pickup_lng: number;
+
+  @IsNumber()
+  dropoff_lat: number;
+
+  @IsNumber()
+  dropoff_lng: number;
+
+  @IsString()
+  @IsOptional()
   pickup?: string;
+
+  @IsString()
+  @IsOptional()
   dropoff?: string;
+
+  @IsNumber()
+  fare: number;
+
+  @IsString()
+  @IsOptional()
   note?: string;
 }
 

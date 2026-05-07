@@ -29,16 +29,12 @@ export default function TripMap({
   return (
     <MapView
       ref={mapRef}
+      provider="google"
       style={{ flex: 1 }}
       initialRegion={initialRegion}
       onPress={onMapPress}
-      mapType="none"
+      mapType="standard"
     >
-      <UrlTile
-        urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-        maximumZ={19}
-        flipY={false}
-      />
 
       {currentLocation && (
         <Marker

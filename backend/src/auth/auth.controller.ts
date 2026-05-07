@@ -12,6 +12,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 import { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -23,23 +24,51 @@ import { RequestUser } from './auth.types';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 class RegisterDto {
+  @IsString()
   name?: string;
+
+  @IsString()
   phone?: string;
+
+  @IsEmail()
   email?: string;
+
+  @IsString()
+  @MinLength(6)
   password?: string;
+
+  @IsEnum(['customer', 'driver', 'admin'])
+  @IsOptional()
   role?: 'customer' | 'driver' | 'admin';
+
+  @IsEnum(['vi', 'en'])
+  @IsOptional()
   preferred_language?: 'vi' | 'en';
 }
 
 class LoginDto {
+  @IsEmail()
   email?: string;
+
+  @IsString()
   password?: string;
 }
 
 class PatchMeDto {
+  @IsString()
+  @IsOptional()
   name?: string;
+
+  @IsString()
+  @IsOptional()
   phone?: string;
+
+  @IsEmail()
+  @IsOptional()
   email?: string;
+
+  @IsEnum(['vi', 'en'])
+  @IsOptional()
   preferred_language?: 'vi' | 'en';
 }
 

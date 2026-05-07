@@ -15,11 +15,13 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import DriverHomeScreen from './src/screens/DriverHomeScreen';
 import ChatScreen from './src/screens/ChatScreen';
+import BookingScreen from './src/screens/BookingScreen';
+import HistoryScreen from './src/screens/HistoryScreen';
 import { API_BASE_URL } from './src/config';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type Screen = 'login' | 'register' | 'profile' | 'driver_home' | 'chat';
+type Screen = 'login' | 'register' | 'profile' | 'driver_home' | 'chat' | 'booking' | 'history';
 type PreferredLanguage = 'vi' | 'en';
 
 type User = {
@@ -86,6 +88,8 @@ const i18n = {
     pickImage: 'Chọn ảnh',
     uploadImage: 'Tải ảnh',
     refresh: 'Tải lại',
+    booking: 'Đặt xe',
+    history: 'Lịch sử',
   },
   en: {
     title: 'Mini Grab',
@@ -103,6 +107,8 @@ const i18n = {
     pickImage: 'Pick image',
     uploadImage: 'Upload image',
     refresh: 'Refresh',
+    booking: 'Booking',
+    history: 'History',
   },
 } as const;
 
@@ -121,8 +127,8 @@ export default function App() {
   const handleLogin = (nextToken: string, user: User) => {
     setToken(nextToken);
     setCurrentUser(user);
-    // Tài xế → vào màn hình driver, khách/admin → vào profile
-    setScreen(user.role === 'driver' ? 'driver_home' : 'profile');
+    // Tài xế → vào màn hình driver, khách/admin → vào booking
+    setScreen(user.role === 'driver' ? 'driver_home' : 'booking');
   };
 
   const handleLogout = async () => {
@@ -194,18 +200,28 @@ export default function App() {
 
         {/* Tab navigation */}
         <View style={styles.tabs}>
-          {(['login', 'register', 'profile'] as const).map((s) => (
-            <TouchableOpacity
-              key={s}
-              onPress={() => setScreen(s)}
-              style={[styles.tabBtn, screen === s && styles.tabBtnActive]}
-            >
-              <Text style={[styles.tabText, screen === s && styles.tabTextActive]}>
-                {labels[s as keyof typeof labels]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-          {currentUser?.role === 'driver' && (
+          {(['login', 'register', 'profile', 'booking', 'history'] as const).map((s) => {
+            // Chỉ hiện Profile/Booking/History nếu đã đăng nhập (có token)
+            // Hoặc hiện Login/Register nếu chưa đăng nhập
+            const isAuthScreen = s === 'login' || s === 'register';
+            const isUserScreen = s === 'profile' || s === 'booking' || s === 'history';
+            
+            if (!token && isUserScreen) return null;
+            if (token && isAuthScreen) return null;
+
+            return (
+              <TouchableOpacity
+                key={s}
+                onPress={() => setScreen(s)}
+                style={[styles.tabBtn, screen === s && styles.tabBtnActive]}
+              >
+                <Text style={[styles.tabText, screen === s && styles.tabTextActive]}>
+                  {labels[s as keyof typeof labels] || s.toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+          {token && currentUser?.role === 'driver' && (
             <TouchableOpacity
               onPress={() => setScreen('driver_home')}
               style={[styles.tabBtn, screen === 'driver_home' && styles.tabBtnActive]}
@@ -243,7 +259,7 @@ export default function App() {
 
         {loading ? <ActivityIndicator size="large" color="#00af50" style={{ marginVertical: 8 }} /> : null}
 
-        <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
+        <View style={styles.content}>
           {screen === 'login' && (
             <LoginScreen language={language} onLogin={handleLogin} setLoading={setLoading} />
           )}
@@ -258,7 +274,16 @@ export default function App() {
               onNeedLogin={() => setScreen('login')}
             />
           )}
-        </ScrollView>
+          {screen === 'booking' && (
+            <BookingScreen token={token} />
+          )}
+          {screen === 'history' && (
+            <HistoryScreen token={token} />
+          )}
+          {screen === 'driver_home' && currentUser && currentUser.role === 'driver' && (
+            <DriverHomeScreen token={token} userId={currentUser.id} />
+          )}
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -304,27 +329,29 @@ function LoginScreen({
   };
 
   return (
-    <View style={styles.panel}>
-      <Text style={styles.panelHeader}>{labels.login}</Text>
-      <TextInput
-        style={styles.input}
-        value={email}
-        onChangeText={setEmail}
-        placeholder={labels.email}
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
-      <TextInput
-        style={styles.input}
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        placeholder={labels.password}
-      />
-      <TouchableOpacity style={styles.submitBtn} onPress={submit}>
-        <Text style={styles.submitBtnText}>{labels.login}</Text>
-      </TouchableOpacity>
-    </View>
+    <ScrollView keyboardShouldPersistTaps="handled">
+      <View style={styles.panel}>
+        <Text style={styles.panelHeader}>{labels.login}</Text>
+        <TextInput
+          style={styles.input}
+          value={email}
+          onChangeText={setEmail}
+          placeholder={labels.email}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+        <TextInput
+          style={styles.input}
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          placeholder={labels.password}
+        />
+        <TouchableOpacity style={styles.submitBtn} onPress={submit}>
+          <Text style={styles.submitBtnText}>{labels.login}</Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
   );
 }
 

@@ -1,4 +1,5 @@
 import { Point } from '../types/trip';
+import { API_BASE_URL } from '../config';
 
 type EstimateResponse = {
   route?: {
@@ -11,19 +12,16 @@ type EstimateResponse = {
 };
 
 export async function estimateTripApi(pickup: Point, dropoff: Point) {
-  const res = await fetch(
-    'https://unruminant-meticulously-delois.ngrok-free.dev/trips/estimate',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        pickup_lat: pickup.latitude,
-        pickup_lng: pickup.longitude,
-        dropoff_lat: dropoff.latitude,
-        dropoff_lng: dropoff.longitude,
-      }),
-    }
-  );
+  const res = await fetch(`${API_BASE_URL}/trips/estimate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      pickup_lat: pickup.latitude,
+      pickup_lng: pickup.longitude,
+      dropoff_lat: dropoff.latitude,
+      dropoff_lng: dropoff.longitude,
+    }),
+  });
 
   const data: EstimateResponse = await res.json();
 
@@ -46,4 +44,36 @@ export async function estimateTripApi(pickup: Point, dropoff: Point) {
     duration: data.duration_minutes ?? null,
     distanceKm: data.distance_km ?? null,
   };
+}
+
+export async function bookTripApi(
+  token: string,
+  pickup: Point,
+  dropoff: Point,
+  fare: number,
+  pickupAddress?: string,
+  dropoffAddress?: string,
+) {
+  const res = await fetch(`${API_BASE_URL}/trips/book`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      pickup_lat: pickup.latitude,
+      pickup_lng: pickup.longitude,
+      dropoff_lat: dropoff.latitude,
+      dropoff_lng: dropoff.longitude,
+      pickup: pickupAddress || `Vị trí tại [${pickup.latitude.toFixed(4)}, ${pickup.longitude.toFixed(4)}]`,
+      dropoff: dropoffAddress || `Vị trí tại [${dropoff.latitude.toFixed(4)}, ${dropoff.longitude.toFixed(4)}]`,
+      fare: fare,
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.message || 'Lỗi khi đặt chuyến');
+  }
+  return data;
 }

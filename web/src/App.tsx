@@ -137,14 +137,23 @@ function App() {
     localStorage.setItem(LANGUAGE_KEY, language)
   }, [language])
 
+  const [user, setUser] = useState<User | null>(null)
+
   useEffect(() => {
     if (token) {
       localStorage.setItem(TOKEN_KEY, token)
+      // Tự động tải profile khi có token để biết Role
+      requestApi<ProfileResponse>('/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      }, language)
+        .then(setUser)
+        .catch(() => setUser(null))
       return
     }
 
     localStorage.removeItem(TOKEN_KEY)
-  }, [token])
+    setUser(null)
+  }, [token, language])
 
   const labels = useMemo(() => messages[language], [language])
 
@@ -185,6 +194,13 @@ function App() {
               <option value="en">EN</option>
             </select>
             <nav>
+              {user?.role === 'admin' && (
+                <>
+                  <Link to="/admin" style={{ color: '#6c63ff', fontWeight: 'bold' }}>Admin</Link>
+                  <Link to="/dashboard" style={{ color: '#f59e0b', fontWeight: 'bold' }}>Dashboard</Link>
+                  <Link to="/monitor" style={{ color: '#ef4444', fontWeight: 'bold' }}>Monitor</Link>
+                </>
+              )}
               <Link to="/login">{labels.login}</Link>
               <Link to="/register">{labels.register}</Link>
               <Link to="/profile">{labels.profile}</Link>

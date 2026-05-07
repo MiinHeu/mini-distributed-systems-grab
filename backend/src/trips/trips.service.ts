@@ -13,6 +13,7 @@ import { DatabaseService } from '../database/database.service';
 import { Region } from '../common/location.utils';
 import { Trip, TripStatus } from './entities/trip.entity';
 import { EstimateTripDto } from './dto/estimate-trip.dto';
+import { DbRoutingService } from '../db-routing/db-routing.service';
 
 @Injectable()
 export class TripsService {
@@ -22,6 +23,7 @@ export class TripsService {
     @InjectDataSource('replica') private replicaDS: DataSource,
     private readonly database: DatabaseService,
     private readonly httpService: HttpService,
+    private readonly dbRouting: DbRoutingService,
   ) {}
 
   async bookTripLegacy(data: Partial<Trip>) {
@@ -61,8 +63,23 @@ export class TripsService {
     return { trips: result.rows, isReadOnly };
   }
 
-  async acceptTrip(tripId: number, driverId: number) {
+  async acceptTrip(tripId: number, userId: number) {
     const region = await this.findTripRegion(tripId);
+    
+    // Tìm driver_id (UUID) của user này trong vùng tương ứng
+    const driverRes = await this.database.queryWithFailover(
+      region,
+      `SELECT id FROM drivers WHERE user_id = $1 AND region = $2 LIMIT 1`,
+      [userId, region],
+      false
+    );
+
+    if (driverRes.result.rowCount === 0) {
+      throw new BadRequestException('Bạn chưa có hồ sơ tài xế trong vùng này.');
+    }
+
+    const driverId = driverRes.result.rows[0].id;
+
     try {
       const { result } = await this.database.queryWithFailover<Trip>(
         region,
@@ -78,13 +95,28 @@ export class TripsService {
       }
       return result.rows[0];
     } catch (error) {
-      if (error instanceof ConflictException) throw error;
+      if (error instanceof ConflictException || error instanceof BadRequestException) throw error;
       throw new ConflictException('Primary database is read-only, cannot accept trip');
     }
   }
 
-  async completeTrip(tripId: number, driverId: number) {
+  async completeTrip(tripId: number, userId: number) {
     const region = await this.findTripRegion(tripId);
+    
+    // Tìm driver_id (UUID) của user này
+    const driverRes = await this.database.queryWithFailover(
+      region,
+      `SELECT id FROM drivers WHERE user_id = $1 AND region = $2 LIMIT 1`,
+      [userId, region],
+      false
+    );
+
+    if (driverRes.result.rowCount === 0) {
+      throw new BadRequestException('Bạn chưa có hồ sơ tài xế trong vùng này.');
+    }
+
+    const driverId = driverRes.result.rows[0].id;
+
     try {
       const { result } = await this.database.queryWithFailover<Trip>(
         region,
@@ -100,7 +132,7 @@ export class TripsService {
       }
       return result.rows[0];
     } catch (error) {
-      if (error instanceof NotFoundException) throw error;
+      if (error instanceof NotFoundException || error instanceof BadRequestException) throw error;
       throw new ConflictException('Primary database is read-only, cannot complete trip');
     }
   }
@@ -110,64 +142,70 @@ export class TripsService {
   }
 
   async getTripHistory(userId: number) {
-    let ds: DataSource;
-    let readOnly = false;
-    let activeNode: string;
-    let warning: string | null = null;
+    // Để demo Tầng 1, ta sẽ lấy lịch sử từ cả 2 miền (North & South)
+    const query = `
+      SELECT
+        t.id, t.status, t.pickup_address, t.dropoff_address, t.fare, t.created_at, t.region,
+        u.name AS customer_name, ud.name AS driver_name
+      FROM trips t
+      LEFT JOIN users u ON t.customer_id = u.id
+      LEFT JOIN drivers dr ON t.driver_id = dr.id
+      LEFT JOIN users ud ON dr.user_id = ud.id
+      WHERE t.customer_id = $1 OR dr.user_id = $1
+      ORDER BY t.created_at DESC
+    `;
 
-    try {
-      await this.primaryDS.query('SELECT 1');
-      ds = this.primaryDS;
-      activeNode = 'southPrimary';
-    } catch {
-      ds = this.replicaDS;
-      readOnly = true;
-      activeNode = 'southReplica';
-      warning = 'Hệ thống đang trong chế độ chỉ đọc. Không thể đặt chuyến mới.';
-    }
+    const [northRes, southRes] = await Promise.all([
+      this.database.queryWithFailover(Region.NORTH, query, [userId], false),
+      this.database.queryWithFailover(Region.SOUTH, query, [userId], false),
+    ]);
 
-    const trips = await ds.query(
-      `SELECT
-         t.id, t.status, t.pickup_address, t.dropoff_address, t.fare, t.created_at,
-         u.name AS customer_name, d.name AS driver_name
-       FROM trips t
-       LEFT JOIN users u ON t.customer_id = u.id
-       LEFT JOIN users d ON t.driver_id = d.id
-       WHERE t.customer_id = $1
-       ORDER BY t.created_at DESC`,
-      [userId],
+    const allTrips = [...northRes.result.rows, ...southRes.result.rows].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
 
-    return { readOnly, warning, activeNode, data: trips };
+    return {
+      readOnly: northRes.isReadOnly || southRes.isReadOnly,
+      activeNode: northRes.isReadOnly ? 'replica' : 'primary',
+      data: allTrips,
+    };
   }
 
   async getTripHistoryAdmin(userId: number) {
-    return this.primaryDS.query(
-      `SELECT t.*, u.name AS customer_name, d.name AS driver_name
-       FROM trips t
-       LEFT JOIN users u ON t.customer_id = u.id
-       LEFT JOIN users d ON t.driver_id = d.id
-       WHERE t.customer_id = $1
-       ORDER BY t.created_at DESC`,
-      [userId],
-    );
+    return this.getTripHistory(userId);
   }
 
   async bookTrip(body: any, userId: number) {
-    try {
-      await this.primaryDS.query('SELECT 1');
-    } catch {
-      throw new ServiceUnavailableException(
-        'Không thể đặt chuyến khi hệ thống đang ở chế độ chỉ đọc',
-      );
-    }
-    const result = await this.primaryDS.query(
-      `INSERT INTO trips (customer_id, driver_id, status, pickup_address, dropoff_address, fare)
-       VALUES ($1, 1, 'pending', $2, $3, 0)
-       RETURNING *`,
-      [userId, body.pickup, body.dropoff],
+    const ctx = this.dbRouting.getWriteContext(body.pickup_lat);
+    
+    const result = await ctx.pool.query(
+      `INSERT INTO trips (
+        customer_id, status, pickup_address, dropoff_address, 
+        pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, 
+        fare, region
+      )
+      VALUES ($1, 'pending', $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING *`,
+      [
+        userId,
+        body.pickup || 'Unknown',
+        body.dropoff || 'Unknown',
+        body.pickup_lat,
+        body.pickup_lng,
+        body.dropoff_lat,
+        body.dropoff_lng,
+        body.fare || 0,
+        ctx.region.toUpperCase(),
+      ],
     );
-    return { message: 'Đặt chuyến thành công', trip: result[0] };
+    
+    const trip = result.rows[0];
+    return { 
+      message: 'Đặt chuyến thành công', 
+      trip,
+      region: ctx.region,
+      activeNode: ctx.activeNode 
+    };
   }
 
   private normalizeRegion(regionRaw: string): Region {
@@ -201,7 +239,7 @@ export class TripsService {
       `?overview=full&geometries=geojson`;
 
     try {
-      const response = await firstValueFrom(this.httpService.get(osrmUrl));
+      const response: any = await firstValueFrom(this.httpService.get(osrmUrl));
       const route = response.data?.routes?.[0];
 
       if (!route) {

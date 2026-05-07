@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sơ đồ Hệ thống - Người 9 (DB Phân Tán)</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background: #f4f7f6; 
+            color: #333; 
+            margin: 0; 
+            padding: 40px 20px; 
+        }
+        .container { 
+            max-width: 1000px; 
+            margin: 0 auto; 
+        }
+        h1 { 
+            text-align: center; 
+            color: #2c3e50; 
+            margin-bottom: 40px; 
+            font-size: 2.2rem;
+        }
+        .card { 
+            background: white; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05); 
+            padding: 40px; 
+            margin-bottom: 50px; 
+        }
+        h2 { 
+            color: #2980b9; 
+            border-bottom: 3px solid #ecf0f1; 
+            padding-bottom: 15px; 
+            margin-top: 0; 
+            font-size: 1.5rem;
+        }
+        p {
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            font-size: 1.05rem;
+        }
+        .mermaid { 
+            text-align: center; 
+            overflow-x: auto;
+        }
+    </style>
+    <!-- Nhúng thư viện Mermaid.js từ CDN -->
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ 
+            startOnLoad: true, 
+            theme: 'default',
+            securityLevel: 'loose',
+            fontFamily: 'Segoe UI'
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>Báo Cáo Sơ Đồ Hệ Thống<br><small style="color:#7f8c8d; font-size: 1.2rem;">Phần Người 9 - DB Phân Tán</small></h1>
+        
+        <!-- Sơ đồ Kiến trúc -->
+        <div class="card">
+            <h2>1. Sơ đồ Kiến trúc & Triển khai (Architecture / Deployment)</h2>
+            <p>Mô tả toàn bộ cấu trúc vật lý của cụm 4 node Database PostgreSQL, 4 Pool PgBouncer, luồng Streaming Replication và hệ thống Monitoring theo thời gian thực.</p>
+            <div class="mermaid">
+                graph TD
+                    subgraph "Backend Core (NestJS)"
+                        API["REST API"]
+                        Router["LocationRouterService"]
+                        DBRoute["DbRoutingService"]
+                        Health["HealthService (Ping mỗi 5s)"]
+                        
+                        API --> Router
+                        API --> DBRoute
+                        DBRoute -. "Tham chiếu trạng thái" .-> Health
+                    end
+
+                    subgraph "Cụm NORTH (Vĩ độ >= 16.5)"
+                        NP_Pool["north-primary-pool (PgBouncer)"]
+                        NR_Pool["north-replica-pool (PgBouncer)"]
+                        
+                        NP[("north-primary (Postgres)")]
+                        NR[("north-replica (Postgres)")]
+                        
+                        NP_Pool --> NP
+                        NR_Pool --> NR
+                        NP -. "Streaming Replication" .-> NR
+                    end
+
+                    subgraph "Cụm SOUTH (Vĩ độ < 16.5)"
+                        SP_Pool["south-primary-pool (PgBouncer)"]
+                        SR_Pool["south-replica-pool (PgBouncer)"]
+                        
+                        SP[("south-primary (Postgres)")]
+                        SR[("south-replica (Postgres)")]
+                        
+                        SP_Pool --> SP
+                        SR_Pool --> SR
+                        SP -. "Streaming Replication" .-> SR
+                    end
+                    
+                    DBRoute -->|"Route Đọc/Ghi"| NP_Pool
+                    DBRoute -->|"Route Đọc"| NR_Pool
+                    DBRoute -->|"Route Đọc/Ghi"| SP_Pool
+                    DBRoute -->|"Route Đọc"| SR_Pool
+
+                    subgraph "Hệ thống Monitoring"
+                        Prom["Prometheus (Port 9090)"]
+                        Graf["Grafana (Port 3001)"]
+                        Exp["4x Postgres Exporters"]
+                        
+                        Graf --> Prom
+                        Prom --> Exp
+                        Exp -. "Scrape Metrics" .-> NP
+                        Exp -. "Scrape Metrics" .-> NR
+                        Exp -. "Scrape Metrics" .-> SP
+                        Exp -. "Scrape Metrics" .-> SR
+                    end
+            </div>
+        </div>
+
+        <!-- Sơ đồ Thuật toán -->
+        <div class="card">
+            <h2>2. Sơ đồ Hoạt động (Activity / Flowchart)</h2>
+            <p>Mô tả thuật toán định tuyến (Routing) theo vĩ độ và cơ chế Tự hàn gắn (Failover) xử lý khi Database Server vật lý bị sập.</p>
+            <div class="mermaid">
+                flowchart TD
+                    Start("Bắt đầu Request API") --> GetLat["Trích xuất Vĩ độ (Latitude)"]
+                    GetLat --> CheckRegion{"Vĩ độ >= 16.5"}
+                    
+                    CheckRegion -->|Đúng| North["Khóa mục tiêu: Cụm NORTH"]
+                    CheckRegion -->|Sai| South["Khóa mục tiêu: Cụm SOUTH"]
+                    
+                    North --> ActionType{"Loại truy vấn?"}
+                    South --> ActionType
+                    
+                    ActionType -->|Thao tác Ghi| CheckWriteHealth{"Primary sống?"}
+                    ActionType -->|Thao tác Đọc| CheckReadHealth{"Trạng thái Node?"}
+                    
+                    CheckWriteHealth -->|Còn sống| WritePrimary["Thực thi Ghi vào Primary DB"]
+                    CheckWriteHealth -->|Đã sập| ThrowError["Báo lỗi: Primary Down - Read-only"]
+                    
+                    CheckReadHealth -->|Cả 2 đều sống| ReadReplica["Đọc từ Replica DB (Giảm tải)"]
+                    CheckReadHealth -->|Chỉ Replica sống| ReadReplicaFallback["Đọc từ Replica DB (Read-only)"]
+                    CheckReadHealth -->|Chỉ Primary sống| ReadPrimary["Đọc từ Primary DB (Fallback)"]
+                    CheckReadHealth -->|Cả 2 đều chết| ThrowTotalError["Báo lỗi: Toàn cụm sập"]
+            </div>
+        </div>
+
+        <!-- Sơ đồ Tuần tự -->
+        <div class="card">
+            <h2>3. Sơ đồ Tuần tự (Sequence Diagram)</h2>
+            <p>Mô tả chi tiết quá trình hệ thống tự động kiểm tra sức khỏe của Server (Health Check) ngầm định kỳ mỗi 5 giây.</p>
+            <div class="mermaid">
+                sequenceDiagram
+                    participant Timer as Bộ đếm thời gian (setInterval)
+                    participant Health as HealthService (Backend)
+                    participant DB as 4 Node Database (Postgres)
+                    
+                    loop Lặp lại mỗi 5 giây
+                        Timer->>Health: Kích hoạt hàm updateStatuses()
+                        Health->>DB: Gửi truy vấn kiểm tra ("SELECT 1")
+                        
+                        alt Node hoạt động bình thường
+                            DB-->>Health: Trả về kết quả thành công
+                            Health->>Health: Cập nhật biến trạng thái node = TRUE (Online)
+                        else Gặp Timeout hoặc Lỗi kết nối
+                            DB--xHealth: Trả về Exception
+                            Health->>Health: Cập nhật biến trạng thái node = FALSE (Offline)
+                            Note over Health: Ngay lập tức kích hoạt<br/>chế độ Read-only cho Node này
+                        end
+                    end
+            </div>
+        </div>
+    </div>
+</body>
+</html>

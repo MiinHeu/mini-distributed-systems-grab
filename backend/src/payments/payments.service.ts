@@ -6,7 +6,7 @@ import * as crypto from 'crypto';
 @Injectable()
 export class PaymentsService {
   constructor(
-    @InjectDataSource('primary') private primaryDS: DataSource,
+    @InjectDataSource() private primaryDS: DataSource,
   ) {}
 
   private sortObject(obj: Record<string, string>) {

@@ -1,16 +1,15 @@
-import dotenv from 'dotenv';
-import path from 'path';
+import 'dotenv/config'; // Nạp biến môi trường ngay lập tức ở dòng đầu tiên
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 
-dotenv.config({ path: path.resolve(process.cwd(), '..', '.env') });
-
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.enableCors({ origin: true });
 
   // Kích hoạt Socket.IO adapter cho WebSocket
@@ -34,3 +33,4 @@ async function bootstrap() {
   await app.listen(port);
 }
 bootstrap();
+// Force restart 1

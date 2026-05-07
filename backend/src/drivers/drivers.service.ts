@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { determineRegionFromLocation, Region } from '../common/location.utils';
 import { UpdateLocationDto } from './dto/update-location.dto';
@@ -7,6 +7,7 @@ import { GetNearbyDriversDto } from './dto/get-nearby.dto';
 
 @Injectable()
 export class DriversService {
+  private readonly logger = new Logger(DriversService.name);
   constructor(private readonly db: DatabaseService) {}
 
   /**
@@ -64,10 +65,13 @@ export class DriversService {
    * Cập nhật trạng thái rảnh/bận
    */
   async updateAvailability(dto: UpdateAvailabilityDto) {
-    // Nếu frontend gửi region thì dùng luôn, không thì tự tìm từ DB
+    this.logger.log(`Cập nhật trạng thái cho driver_id: ${dto.driver_id}, available: ${dto.is_available}`);
+    
     const region: Region = dto.region
       ? (dto.region as Region)
       : await this.findDriverRegion(dto.driver_id);
+
+    this.logger.log(`Đã xác định region cho driver ${dto.driver_id}: ${region}`);
 
     const query = `
       UPDATE drivers 
@@ -176,11 +180,7 @@ export class DriversService {
       WHERE user_id = $1
       ORDER BY created_at DESC
     `;
-    const { result, isReadOnly } = await this.db.queryWithFailover(region, query, [userId], false);
-    return {
-      data: result.rows,
-      region_routed_to: region,
-      is_read_only_fallback: isReadOnly,
-    };
+    const { result } = await this.db.queryWithFailover(region, query, [userId], false);
+    return result.rows;
   }
 }

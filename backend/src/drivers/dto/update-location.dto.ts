@@ -1,7 +1,7 @@
-import { IsNumber, IsUUID, Max, Min } from 'class-validator';
+import { IsNumber, IsString, Max, Min } from 'class-validator';
 
 export class UpdateLocationDto {
-  @IsUUID()
+  @IsString()
   driver_id: string;
 
   @IsNumber()
