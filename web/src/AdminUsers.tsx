@@ -1,113 +1,115 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react'
 
-const roleColor: any = {
-  admin: '#6c63ff',
-  driver: '#00b894',
-  customer: '#0984e3',
-};
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+const TOKEN_KEY = 'grab_auth_token'
+
+type User = { id: number; name: string; email: string; role: string; is_suspended?: boolean; created_at: string; }
+
+const ROLE_BADGE: Record<string, string> = { admin: 'badge-blue', driver: 'badge-green', customer: 'badge-gray' }
+const ROLE_LABEL: Record<string, string> = { admin: 'Quản trị', driver: 'Tài xế', customer: 'Khách hàng' }
 
 export default function AdminUsers() {
-  const [users, setUsers] = useState<any[]>([]);
-  const [search, setSearch] = useState('');
+  const [users, setUsers] = useState<User[]>([])
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(false)
+  const token = localStorage.getItem(TOKEN_KEY) ?? ''
 
-  const fetchUsers = () => {
-    fetch('/admin/users')
-      .then(res => res.json())
-      .then(data => setUsers(data));
-  };
+  const fetchUsers = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/users`, { headers: { Authorization: `Bearer ${token}` } })
+      const json = await res.json()
+      setUsers(json.data ?? json ?? [])
+    } catch {
+    } finally {
+      setLoading(false)
+    }
+  }, [token])
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
+  useEffect(() => { fetchUsers() }, [fetchUsers])
 
-  const filteredUsers = users.filter((u) =>
-    u.name.toLowerCase().includes(search.toLowerCase()) ||
-    u.email.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleSuspend = async (id: number) => {
+    await fetch(`${API_BASE_URL}/admin/users/${id}/suspend`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, is_suspended: true } : u))
+  }
 
-  const handleSuspend = (id: string) => {
-    fetch(`/admin/users/${id}/suspend`, { method: 'PATCH' })
-      .then(() => setUsers(prev => prev.map(u =>
-        u.id === id ? { ...u, is_suspended: true } : u
-      )));
-  };
+  const handleUnsuspend = async (id: number) => {
+    await fetch(`${API_BASE_URL}/admin/users/${id}/unsuspend`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, is_suspended: false } : u))
+  }
 
-  const handleUnsuspend = (id: string) => {
-    fetch(`/admin/users/${id}/unsuspend`, { method: 'PATCH' })
-      .then(() => setUsers(prev => prev.map(u =>
-        u.id === id ? { ...u, is_suspended: false } : u
-      )));
-  };
+  const handleDelete = async (id: number) => {
+    if (!confirm('Bạn chắc chắn muốn xóa người dùng này?')) return
+    await fetch(`${API_BASE_URL}/admin/users/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    setUsers(prev => prev.filter(u => u.id !== id))
+  }
 
-  const handleDelete = (id: string) => {
-    if (!confirm('Bạn chắc chắn muốn xóa user này?')) return;
-    fetch(`/admin/users/${id}`, { method: 'DELETE' })
-      .then(() => setUsers(prev => prev.filter(u => u.id !== id)));
-  };
+  const filtered = users.filter(u =>
+    u.name?.toLowerCase().includes(search.toLowerCase()) ||
+    u.email?.toLowerCase().includes(search.toLowerCase())
+  )
 
   return (
-    <div style={{ padding: '24px 32px' }}>
-      <h2 style={{ marginBottom: 16, fontSize: 22 }}>👥 Quản lý User</h2>
-      <input
-        placeholder="🔍 Tìm kiếm theo tên hoặc email..."
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        style={{
-          marginBottom: 16, padding: '8px 14px', width: 320,
-          borderRadius: 8, border: '1px solid #444',
-          background: '#2a2a3e', color: 'white', fontSize: 14,
-        }}
-      />
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-        <thead>
-          <tr style={{ background: '#2a2a3e', color: '#aaa', textAlign: 'left' }}>
-            <th style={th}>ID</th>
-            <th style={th}>Tên</th>
-            <th style={th}>Email</th>
-            <th style={th}>Role</th>
-            <th style={th}>Trạng thái</th>
-            <th style={th}>Hành động</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredUsers.length === 0 ? (
-            <tr><td colSpan={6} style={{ textAlign: 'center', padding: 20, color: '#aaa' }}>Không tìm thấy user</td></tr>
-          ) : (
-            filteredUsers.map((u, i) => (
-              <tr key={u.id} style={{ background: i % 2 === 0 ? '#1e1e2e' : '#23233a' }}>
-                <td style={td}>{u.id}</td>
-                <td style={td}>{u.name}</td>
-                <td style={td}>{u.email}</td>
-                <td style={td}>
-                  <span style={{ background: roleColor[u.role] || '#555', color: 'white', padding: '2px 10px', borderRadius: 12, fontSize: 12 }}>
-                    {u.role}
-                  </span>
-                </td>
-                <td style={td}>
-                  {u.is_suspended
-                    ? <span style={{ color: '#e74c3c' }}>🔒 Đã khóa</span>
-                    : <span style={{ color: '#00b894' }}>✅ Hoạt động</span>
-                  }
-                </td>
-                <td style={td}>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 800, color: 'white' }}>Quản lý người dùng</h2>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <input className="search-input" placeholder="Tìm kiếm theo tên hoặc email..." value={search} onChange={e => setSearch(e.target.value)} />
+          <button className="btn-success" onClick={fetchUsers}>Tải lại</button>
+        </div>
+      </div>
+      {loading ? <p style={{ color: '#8892B0' }}>Đang tải...</p> : (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Tên</th>
+              <th>Email</th>
+              <th>Vai trò</th>
+              <th>Trạng thái</th>
+              <th>Ngày tạo</th>
+              <th>Hành động</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr><td colSpan={7} style={{ textAlign: 'center', color: '#5A6380', padding: 32 }}>Không tìm thấy người dùng</td></tr>
+            ) : filtered.map(u => (
+              <tr key={u.id}>
+                <td style={{ color: '#5A6380' }}>#{u.id}</td>
+                <td style={{ fontWeight: 600 }}>{u.name}</td>
+                <td style={{ color: '#8892B0' }}>{u.email}</td>
+                <td><span className={`badge ${ROLE_BADGE[u.role] ?? 'badge-gray'}`}>{ROLE_LABEL[u.role] ?? u.role}</span></td>
+                <td>
                   {u.is_suspended ? (
-                    <button onClick={() => handleUnsuspend(u.id)} style={btnGreen}>🔓 Mở khóa</button>
+                    <span className="badge badge-red">Đã khóa</span>
                   ) : (
-                    <button onClick={() => handleSuspend(u.id)} style={btnOrange}>🔒 Khóa</button>
+                    <span className="badge badge-green">Hoạt động</span>
                   )}
-                  <button onClick={() => handleDelete(u.id)} style={btnRed}>🗑 Xóa</button>
+                </td>
+                <td style={{ color: '#5A6380', fontSize: 12 }}>{new Date(u.created_at).toLocaleDateString('vi-VN')}</td>
+                <td style={{ display: 'flex', gap: 6 }}>
+                  {u.is_suspended ? (
+                    <button className="btn-success" onClick={() => handleUnsuspend(u.id)}>Mở khóa</button>
+                  ) : (
+                    <button className="btn-warning" onClick={() => handleSuspend(u.id)}>Khóa</button>
+                  )}
+                  <button className="btn-danger" onClick={() => handleDelete(u.id)}>Xóa</button>
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
-  );
+  )
 }
-
-const th: any = { padding: '10px 14px', fontWeight: 600, borderBottom: '1px solid #333' };
-const td: any = { padding: '10px 14px', borderBottom: '1px solid #2a2a3e' };
-const btnOrange: any = { marginRight: 8, background: '#e67e22', color: 'white', border: 'none', padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13 };
-const btnGreen: any = { marginRight: 8, background: '#00b894', color: 'white', border: 'none', padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13 };
-const btnRed: any = { background: '#e74c3c', color: 'white', border: 'none', padding: '5px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13 };
