@@ -1,16 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  Button,
-  Image,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+  ActivityIndicator, Alert, Image, SafeAreaView, ScrollView,
+  StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import DriverHomeScreen from './src/screens/DriverHomeScreen';
@@ -18,101 +9,25 @@ import ChatScreen from './src/screens/ChatScreen';
 import BookingScreen from './src/screens/BookingScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import { API_BASE_URL } from './src/config';
-
-// ─── Types ───────────────────────────────────────────────────────────────────
+import { Colors, Spacing, Radius, Shadow } from './src/theme';
 
 type Screen = 'login' | 'register' | 'profile' | 'driver_home' | 'chat' | 'booking' | 'history';
 type PreferredLanguage = 'vi' | 'en';
-
-type User = {
-  id: number;
-  name: string;
-  phone: string;
-  email: string;
-  role: 'customer' | 'driver' | 'admin';
-  avatar_url: string | null;
-  preferred_language: PreferredLanguage;
-  created_at: string;
-  updated_at: string;
-};
-
-type ChatParams = {
-  tripId: number;
-  receiverId: number;
-  receiverName: string;
-};
-
+type User = { id: number; name: string; phone: string; email: string; role: 'customer' | 'driver' | 'admin'; avatar_url: string | null; preferred_language: PreferredLanguage; created_at: string; updated_at: string; };
+type ChatParams = { tripId: number; receiverId: number; receiverName: string };
 type ApiEnvelope<T> = { data: T };
 
-// ─── API helper ──────────────────────────────────────────────────────────────
-
-async function requestApi<T>(
-  path: string,
-  language: PreferredLanguage,
-  options: RequestInit = {},
-): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Accept-Language': language,
-      ...(options.headers ?? {}),
-    },
-  });
-
+async function requestApi<T>(path: string, language: PreferredLanguage, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(API_BASE_URL + path, { ...options, headers: { 'Accept-Language': language, ...(options.headers ?? {}) } });
   const data = (await response.json()) as ApiEnvelope<T> | { message?: string };
-
-  if (!response.ok) {
-    const message = 'message' in data && data.message ? data.message : `HTTP ${response.status}`;
-    throw new Error(message);
-  }
-
+  if (!response.ok) { const message = 'message' in data && data.message ? data.message : `HTTP ${response.status}`; throw new Error(message); }
   return (data as ApiEnvelope<T>).data;
 }
 
-// ─── i18n ────────────────────────────────────────────────────────────────────
-
 const i18n = {
-  vi: {
-    title: 'Mini Grab',
-    login: 'Đăng nhập',
-    register: 'Đăng ký',
-    profile: 'Hồ sơ',
-    driverHome: 'Tài xế',
-    logout: 'Đăng xuất',
-    name: 'Họ tên',
-    phone: 'Số điện thoại',
-    email: 'Email',
-    password: 'Mật khẩu',
-    language: 'Ngôn ngữ',
-    save: 'Lưu',
-    pickImage: 'Chọn ảnh',
-    uploadImage: 'Tải ảnh',
-    refresh: 'Tải lại',
-    booking: 'Đặt xe',
-    history: 'Lịch sử',
-  },
-  en: {
-    title: 'Mini Grab',
-    login: 'Login',
-    register: 'Register',
-    profile: 'Profile',
-    driverHome: 'Driver',
-    logout: 'Logout',
-    name: 'Name',
-    phone: 'Phone',
-    email: 'Email',
-    password: 'Password',
-    language: 'Language',
-    save: 'Save',
-    pickImage: 'Pick image',
-    uploadImage: 'Upload image',
-    refresh: 'Refresh',
-    booking: 'Booking',
-    history: 'History',
-  },
+  vi: { title: 'Mini Grab', login: 'Đăng nhập', register: 'Đăng ký', profile: 'Hồ sơ', driverHome: 'Tài xế', logout: 'Đăng xuất', name: 'Họ tên', phone: 'Số điện thoại', email: 'Email', password: 'Mật khẩu', language: 'Ngôn ngữ', save: 'Lưu', pickImage: 'Chọn ảnh', uploadImage: 'Tải ảnh', refresh: 'Tải lại', booking: 'Đặt xe', history: 'Lịch sử' },
+  en: { title: 'Mini Grab', login: 'Login', register: 'Register', profile: 'Profile', driverHome: 'Driver', logout: 'Logout', name: 'Name', phone: 'Phone', email: 'Email', password: 'Password', language: 'Language', save: 'Save', pickImage: 'Pick image', uploadImage: 'Upload image', refresh: 'Refresh', booking: 'Booking', history: 'History' },
 } as const;
-
-// ─── Root App ────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('login');
@@ -121,583 +36,343 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
   const [chatParams, setChatParams] = useState<ChatParams | null>(null);
-
   const labels = useMemo(() => i18n[language], [language]);
 
   const handleLogin = (nextToken: string, user: User) => {
-    setToken(nextToken);
-    setCurrentUser(user);
-    // Tài xế → vào màn hình driver, khách/admin → vào booking
+    setToken(nextToken); setCurrentUser(user);
     setScreen(user.role === 'driver' ? 'driver_home' : 'booking');
   };
 
   const handleLogout = async () => {
-    if (token) {
-      try {
-        await requestApi<{ message: string }>('/auth/logout', language, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      } catch {
-        // ignore
-      }
-    }
-    setToken('');
-    setCurrentUser(null);
-    setChatParams(null);
-    setScreen('login');
+    if (token) { try { await requestApi<{ message: string }>('/auth/logout', language, { method: 'POST', headers: { Authorization: `Bearer ${token}` } }); } catch {} }
+    setToken(''); setCurrentUser(null); setChatParams(null); setScreen('login');
   };
 
   const handleOpenChat = (tripId: number, receiverId: number, receiverName: string) => {
-    setChatParams({ tripId, receiverId, receiverName });
-    setScreen('chat');
+    setChatParams({ tripId, receiverId, receiverName }); setScreen('chat');
   };
 
-  // ── Màn hình Chat ──────────────────────────────────────────────────────────
   if (screen === 'chat' && chatParams && currentUser) {
     return (
-      <SafeAreaView style={{ flex: 1 }}>
-        <View style={styles.chatBackBar}>
-          <TouchableOpacity onPress={() => setScreen('driver_home')} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>← Quay lại</Text>
+      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.primary }}>
+        <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
+        <View style={S.chatHeader}>
+          <TouchableOpacity onPress={() => setScreen('driver_home')} style={S.backBtn}>
+            <Text style={S.backBtnText}>{'<'} Quay lại</Text>
           </TouchableOpacity>
+          <Text style={S.chatHeaderTitle}>Tin nhắn</Text>
+          <View style={{ width: 80 }} />
         </View>
-        <ChatScreen
-          tripId={chatParams.tripId}
-          currentUserId={currentUser.id}
-          receiverId={chatParams.receiverId}
-          receiverName={chatParams.receiverName}
-          token={token}
-        />
+        <ChatScreen tripId={chatParams.tripId} currentUserId={currentUser.id} receiverId={chatParams.receiverId} receiverName={chatParams.receiverName} token={token} />
       </SafeAreaView>
     );
   }
 
-  // ── Màn hình Driver Home ───────────────────────────────────────────────────
   if (screen === 'driver_home' && currentUser?.role === 'driver') {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#f9fafb' }}>
-        <View style={styles.topBar}>
-          <Text style={styles.topBarTitle}>Mini Grab Driver</Text>
-          <TouchableOpacity onPress={handleLogout}>
-            <Text style={styles.logoutText}>Đăng xuất</Text>
+      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bgScreen }}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+        <View style={S.topBar}>
+          <View style={S.topBarLeft}>
+            <View style={S.logoMini}><Text style={S.logoMiniText}>MG</Text></View>
+            <Text style={S.topBarTitle}>Mini Grab Driver</Text>
+          </View>
+          <TouchableOpacity onPress={handleLogout} style={S.logoutPill}>
+            <Text style={S.logoutPillText}>Đăng xuất</Text>
           </TouchableOpacity>
         </View>
-        <DriverHomeScreen
-          token={token}
-          userId={currentUser.id}
-          onOpenChat={handleOpenChat}
-        />
+        <DriverHomeScreen token={token} userId={currentUser.id} onOpenChat={handleOpenChat} />
       </SafeAreaView>
     );
   }
 
-  // ── Màn hình Auth (login / register / profile) ────────────────────────────
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <Text style={styles.title}>{labels.title}</Text>
+    <SafeAreaView style={S.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
+      <View style={S.header}>
+        <View style={S.logoWrap}>
+          <View style={S.logoBadge}><Text style={S.logoBadgeText}>MG</Text></View>
+          <Text style={S.headerTitle}>{labels.title}</Text>
+        </View>
+        <View style={S.headerRight}>
+          <TouchableOpacity onPress={() => setLanguage(language === 'vi' ? 'en' : 'vi')} style={S.langToggle}>
+            <Text style={S.langToggleText}>{language.toUpperCase()}</Text>
+          </TouchableOpacity>
+          {token && (
+            <TouchableOpacity onPress={handleLogout} style={S.headerLogout}>
+              <Text style={S.headerLogoutText}>Thoát</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
 
-        {/* Tab navigation */}
-        <View style={styles.tabs}>
-          {(['login', 'register', 'profile', 'booking', 'history'] as const).map((s) => {
-            // Chỉ hiện Profile/Booking/History nếu đã đăng nhập (có token)
-            // Hoặc hiện Login/Register nếu chưa đăng nhập
-            const isAuthScreen = s === 'login' || s === 'register';
-            const isUserScreen = s === 'profile' || s === 'booking' || s === 'history';
-            
-            if (!token && isUserScreen) return null;
-            if (token && isAuthScreen) return null;
-
-            return (
-              <TouchableOpacity
-                key={s}
-                onPress={() => setScreen(s)}
-                style={[styles.tabBtn, screen === s && styles.tabBtnActive]}
-              >
-                <Text style={[styles.tabText, screen === s && styles.tabTextActive]}>
-                  {labels[s as keyof typeof labels] || s.toUpperCase()}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-          {token && currentUser?.role === 'driver' && (
-            <TouchableOpacity
-              onPress={() => setScreen('driver_home')}
-              style={[styles.tabBtn, screen === 'driver_home' && styles.tabBtnActive]}
-            >
-              <Text style={[styles.tabText, screen === 'driver_home' && styles.tabTextActive]}>
-                {labels.driverHome}
+      {token && (
+        <View style={S.tabBar}>
+          {(['booking', 'history', 'profile'] as const).map((s) => (
+            <TouchableOpacity key={s} onPress={() => setScreen(s)} style={[S.tabItem, screen === s && S.tabItemActive]}>
+              <Text style={[S.tabLabel, screen === s && S.tabLabelActive]}>
+                {s === 'booking' ? 'Đặt xe' : s === 'history' ? 'Lịch sử' : 'Hồ sơ'}
               </Text>
             </TouchableOpacity>
+          ))}
+          {currentUser?.role === 'driver' && (
+            <TouchableOpacity onPress={() => setScreen('driver_home')} style={[S.tabItem, screen === 'driver_home' && S.tabItemActive]}>
+              <Text style={[S.tabLabel, screen === 'driver_home' && S.tabLabelActive]}>Tài xế</Text>
+            </TouchableOpacity>
           )}
         </View>
+      )}
 
-        {/* Language + Logout */}
-        <View style={styles.languageRow}>
-          <Text style={styles.langLabel}>{labels.language}:</Text>
-          <View style={styles.langButtons}>
-            <TouchableOpacity
-              onPress={() => setLanguage('vi')}
-              style={[styles.langBtn, language === 'vi' && styles.langBtnActive]}
-            >
-              <Text style={language === 'vi' ? styles.langBtnTextActive : styles.langBtnText}>VI</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setLanguage('en')}
-              style={[styles.langBtn, language === 'en' && styles.langBtnActive]}
-            >
-              <Text style={language === 'en' ? styles.langBtnTextActive : styles.langBtnText}>EN</Text>
-            </TouchableOpacity>
-          </View>
-          {token ? (
-            <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-              <Text style={styles.logoutBtnText}>{labels.logout}</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
+      {loading && <View style={S.loadingBar}><ActivityIndicator size="small" color={Colors.white} /></View>}
 
-        {loading ? <ActivityIndicator size="large" color="#00af50" style={{ marginVertical: 8 }} /> : null}
-
-        <View style={styles.content}>
-          {screen === 'login' && (
-            <LoginScreen language={language} onLogin={handleLogin} setLoading={setLoading} />
-          )}
-          {screen === 'register' && (
-            <RegisterScreen language={language} setLoading={setLoading} />
-          )}
-          {screen === 'profile' && (
-            <ProfileScreen
-              language={language}
-              token={token}
-              setLoading={setLoading}
-              onNeedLogin={() => setScreen('login')}
-            />
-          )}
-          {screen === 'booking' && (
-            <BookingScreen token={token} />
-          )}
-          {screen === 'history' && (
-            <HistoryScreen token={token} />
-          )}
-          {screen === 'driver_home' && currentUser && currentUser.role === 'driver' && (
-            <DriverHomeScreen token={token} userId={currentUser.id} />
-          )}
-        </View>
+      <View style={S.content}>
+        {screen === 'login' && <LoginScreen language={language} onLogin={handleLogin} setLoading={setLoading} onGoRegister={() => setScreen('register')} />}
+        {screen === 'register' && <RegisterScreen language={language} setLoading={setLoading} onGoLogin={() => setScreen('login')} />}
+        {screen === 'profile' && <ProfileScreen language={language} token={token} setLoading={setLoading} onNeedLogin={() => setScreen('login')} />}
+        {screen === 'booking' && <BookingScreen token={token} />}
+        {screen === 'history' && <HistoryScreen token={token} />}
       </View>
     </SafeAreaView>
   );
 }
 
-// ─── Login Screen ─────────────────────────────────────────────────────────────
-
-function LoginScreen({
-  language,
-  onLogin,
-  setLoading,
-}: {
-  language: PreferredLanguage;
-  onLogin: (token: string, user: User) => void;
-  setLoading: (v: boolean) => void;
-}) {
-  const labels = i18n[language];
+// ─── LoginScreen ─────────────────────────────────────────────────────────────
+function LoginScreen({ language, onLogin, setLoading, onGoRegister }: { language: PreferredLanguage; onLogin: (t: string, u: User) => void; setLoading: (v: boolean) => void; onGoRegister: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   const submit = async () => {
-    if (!email.trim() || !password) {
-      Alert.alert('Vui lòng nhập email và mật khẩu');
-      return;
-    }
+    if (!email.trim() || !password) { Alert.alert('Thông báo', 'Vui lòng nhập email và mật khẩu'); return; }
     setLoading(true);
     try {
-      const data = await requestApi<{ token: string; message: string; user: User }>(
-        '/auth/login',
-        language,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: email.trim(), password }),
-        },
-      );
+      const data = await requestApi<{ token: string; message: string; user: User }>('/auth/login', language, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), password }) });
       onLogin(data.token, data.user);
-    } catch (error) {
-      Alert.alert('Đăng nhập thất bại', (error as Error).message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { Alert.alert('Đăng nhập thất bại', (e as Error).message); }
+    finally { setLoading(false); }
   };
 
   return (
-    <ScrollView keyboardShouldPersistTaps="handled">
-      <View style={styles.panel}>
-        <Text style={styles.panelHeader}>{labels.login}</Text>
-        <TextInput
-          style={styles.input}
-          value={email}
-          onChangeText={setEmail}
-          placeholder={labels.email}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-        <TextInput
-          style={styles.input}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          placeholder={labels.password}
-        />
-        <TouchableOpacity style={styles.submitBtn} onPress={submit}>
-          <Text style={styles.submitBtnText}>{labels.login}</Text>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={S.authScroll}>
+      <View style={S.authCard}>
+        <View style={S.authHero}>
+          <View style={S.authLogoBig}><Text style={S.authLogoBigText}>MG</Text></View>
+          <Text style={S.authHeroTitle}>Chào mừng trở lại!</Text>
+          <Text style={S.authHeroSub}>Đăng nhập để tiếp tục</Text>
+        </View>
+        <View style={S.inputGroup}>
+          <Text style={S.inputLabel}>Email</Text>
+          <TextInput style={S.input} value={email} onChangeText={setEmail} placeholder="email@example.com" keyboardType="email-address" autoCapitalize="none" placeholderTextColor={Colors.gray400} />
+        </View>
+        <View style={S.inputGroup}>
+          <Text style={S.inputLabel}>Mật khẩu</Text>
+          <TextInput style={S.input} value={password} onChangeText={setPassword} secureTextEntry placeholder="••••••••" placeholderTextColor={Colors.gray400} />
+        </View>
+        <TouchableOpacity style={S.primaryBtn} onPress={submit}>
+          <Text style={S.primaryBtnText}>Đăng nhập</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onGoRegister} style={S.linkRow}>
+          <Text style={S.linkText}>Chưa có tài khoản? <Text style={S.linkBold}>Đăng ký ngay</Text></Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
   );
 }
 
-// ─── Register Screen ──────────────────────────────────────────────────────────
-
-function RegisterScreen({
-  language,
-  setLoading,
-}: {
-  language: PreferredLanguage;
-  setLoading: (v: boolean) => void;
-}) {
-  const labels = i18n[language];
+// ─── RegisterScreen ───────────────────────────────────────────────────────────
+function RegisterScreen({ language, setLoading, onGoLogin }: { language: PreferredLanguage; setLoading: (v: boolean) => void; onGoLogin: () => void }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'customer' | 'driver' | 'admin'>('customer');
-  const [preferredLanguage, setPreferredLanguage] = useState<PreferredLanguage>('vi');
 
   const submit = async () => {
+    if (!name || !phone || !email || !password) { Alert.alert('Thông báo', 'Vui lòng điền đầy đủ thông tin'); return; }
     setLoading(true);
     try {
-      const data = await requestApi<{ message: string }>('/auth/register', language, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone, email, password, role, preferred_language: preferredLanguage }),
-      });
+      const data = await requestApi<{ message: string }>('/auth/register', language, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, phone, email, password, role, preferred_language: language }) });
       Alert.alert('Thành công', data.message);
       setPassword('');
-    } catch (error) {
-      Alert.alert('Đăng ký thất bại', (error as Error).message);
-    } finally {
-      setLoading(false);
-    }
+      onGoLogin();
+    } catch (e) { Alert.alert('Đăng ký thất bại', (e as Error).message); }
+    finally { setLoading(false); }
   };
 
   return (
-    <View style={styles.panel}>
-      <Text style={styles.panelHeader}>{labels.register}</Text>
-      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder={labels.name} />
-      <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder={labels.phone} keyboardType="phone-pad" />
-      <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder={labels.email} keyboardType="email-address" autoCapitalize="none" />
-      <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry placeholder={labels.password} />
-
-      <Text style={styles.sectionLabel}>Vai trò:</Text>
-      <View style={styles.inlineRow}>
-        {(['customer', 'driver', 'admin'] as const).map((r) => (
-          <TouchableOpacity
-            key={r}
-            onPress={() => setRole(r)}
-            style={[styles.chipBtn, role === r && styles.chipBtnActive]}
-          >
-            <Text style={[styles.chipText, role === r && styles.chipTextActive]}>{r}</Text>
-          </TouchableOpacity>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={S.authScroll}>
+      <View style={S.authCard}>
+        <Text style={S.authCardTitle}>Tạo tài khoản mới</Text>
+        {[{ label: 'Họ tên', val: name, set: setName, type: 'default' as const }, { label: 'Số điện thoại', val: phone, set: setPhone, type: 'phone-pad' as const }, { label: 'Email', val: email, set: setEmail, type: 'email-address' as const }].map(f => (
+          <View key={f.label} style={S.inputGroup}>
+            <Text style={S.inputLabel}>{f.label}</Text>
+            <TextInput style={S.input} value={f.val} onChangeText={f.set} keyboardType={f.type} autoCapitalize="none" placeholderTextColor={Colors.gray400} placeholder={f.label} />
+          </View>
         ))}
+        <View style={S.inputGroup}>
+          <Text style={S.inputLabel}>Mật khẩu</Text>
+          <TextInput style={S.input} value={password} onChangeText={setPassword} secureTextEntry placeholder="••••••••" placeholderTextColor={Colors.gray400} />
+        </View>
+        <Text style={S.inputLabel}>Vai trò</Text>
+        <View style={S.chipRow}>
+          {(['customer', 'driver'] as const).map(r => (
+            <TouchableOpacity key={r} onPress={() => setRole(r)} style={[S.chip, role === r && S.chipActive]}>
+              <Text style={[S.chipText, role === r && S.chipTextActive]}>{r === 'customer' ? 'Khách hàng' : 'Tài xế'}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <TouchableOpacity style={S.primaryBtn} onPress={submit}>
+          <Text style={S.primaryBtnText}>Đăng ký</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onGoLogin} style={S.linkRow}>
+          <Text style={S.linkText}>Đã có tài khoản? <Text style={S.linkBold}>Đăng nhập</Text></Text>
+        </TouchableOpacity>
       </View>
-
-      <Text style={styles.sectionLabel}>Ngôn ngữ:</Text>
-      <View style={styles.inlineRow}>
-        {(['vi', 'en'] as const).map((l) => (
-          <TouchableOpacity
-            key={l}
-            onPress={() => setPreferredLanguage(l)}
-            style={[styles.chipBtn, preferredLanguage === l && styles.chipBtnActive]}
-          >
-            <Text style={[styles.chipText, preferredLanguage === l && styles.chipTextActive]}>{l.toUpperCase()}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <TouchableOpacity style={styles.submitBtn} onPress={submit}>
-        <Text style={styles.submitBtnText}>{labels.register}</Text>
-      </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
-// ─── Profile Screen ───────────────────────────────────────────────────────────
-
-function ProfileScreen({
-  language,
-  token,
-  setLoading,
-  onNeedLogin,
-}: {
-  language: PreferredLanguage;
-  token: string;
-  setLoading: (v: boolean) => void;
-  onNeedLogin: () => void;
-}) {
-  const labels = i18n[language];
+// ─── ProfileScreen ────────────────────────────────────────────────────────────
+function ProfileScreen({ language, token, setLoading, onNeedLogin }: { language: PreferredLanguage; token: string; setLoading: (v: boolean) => void; onNeedLogin: () => void }) {
   const [profile, setProfile] = useState<User | null>(null);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [preferredLanguage, setPreferredLanguage] = useState<PreferredLanguage>('vi');
-  const [pickedImageUri, setPickedImageUri] = useState('');
+  const [pickedUri, setPickedUri] = useState('');
 
-  useEffect(() => {
-    if (!token) { onNeedLogin(); return; }
-    void loadProfile();
-  }, [token]);
+  useEffect(() => { if (!token) { onNeedLogin(); return; } void load(); }, [token, language]);
 
-  const loadProfile = async () => {
-    if (!token) return;
+  const load = async () => {
     setLoading(true);
     try {
-      const data = await requestApi<User>('/auth/me', language, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setProfile(data);
-      setName(data.name);
-      setPhone(data.phone);
-      setEmail(data.email);
-      setPreferredLanguage(data.preferred_language);
-    } catch (error) {
-      Alert.alert('Lỗi', (error as Error).message);
-    } finally {
-      setLoading(false);
-    }
+      const data = await requestApi<User>('/auth/me', language, { headers: { Authorization: `Bearer ${token}` } });
+      setProfile(data); setName(data.name); setPhone(data.phone); setEmail(data.email);
+    } catch (e) { Alert.alert('Lỗi', (e as Error).message); }
+    finally { setLoading(false); }
   };
 
   const save = async () => {
     setLoading(true);
     try {
-      const data = await requestApi<User>('/auth/me', language, {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone, email, preferred_language: preferredLanguage }),
-      });
-      setProfile(data);
-      Alert.alert('Đã lưu thành công');
-    } catch (error) {
-      Alert.alert('Lỗi', (error as Error).message);
-    } finally {
-      setLoading(false);
-    }
+      const data = await requestApi<User>('/auth/me', language, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name, phone, email }) });
+      setProfile(data); Alert.alert('Thông báo', 'Đã lưu thành công');
+    } catch (e) { Alert.alert('Lỗi', (e as Error).message); }
+    finally { setLoading(false); }
   };
 
   const pickAvatar = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setPickedImageUri(result.assets[0].uri);
-    }
+    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: 0.8 });
+    if (!r.canceled && r.assets[0]) setPickedUri(r.assets[0].uri);
   };
 
   const uploadAvatar = async () => {
-    if (!pickedImageUri) { Alert.alert('Chưa chọn ảnh'); return; }
+    if (!pickedUri) { Alert.alert('Thông báo', 'Chưa chọn ảnh'); return; }
     setLoading(true);
     try {
-      const formData = new FormData();
-      formData.append('avatar', {
-        uri: pickedImageUri,
-        name: `avatar-${Date.now()}.jpg`,
-        type: 'image/jpeg',
-      } as unknown as Blob);
-      const data = await requestApi<{ message: string; user: User }>('/auth/me/avatar', language, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      setProfile(data.user);
-      setPickedImageUri('');
-      Alert.alert('Thành công', data.message);
-    } catch (error) {
-      Alert.alert('Lỗi', (error as Error).message);
-    } finally {
-      setLoading(false);
-    }
+      const fd = new FormData();
+      fd.append('avatar', { uri: pickedUri, name: `avatar-${Date.now()}.jpg`, type: 'image/jpeg' } as unknown as Blob);
+      const data = await requestApi<{ message: string; user: User }>('/auth/me/avatar', language, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+      setProfile(data.user); setPickedUri(''); Alert.alert('Thành công', data.message);
+    } catch (e) { Alert.alert('Lỗi', (e as Error).message); }
+    finally { setLoading(false); }
   };
 
-  const avatarUrl = profile?.avatar_url ? `${API_BASE_URL}${profile.avatar_url}` : '';
+  const avatarUrl = profile?.avatar_url ? API_BASE_URL + profile.avatar_url : '';
 
   return (
-    <View style={styles.panel}>
-      <Text style={styles.panelHeader}>{labels.profile}</Text>
-      <TouchableOpacity onPress={loadProfile} style={styles.refreshSmallBtn}>
-        <Text style={styles.refreshSmallText}>{labels.refresh}</Text>
-      </TouchableOpacity>
-
-      {(avatarUrl || pickedImageUri) && (
-        <Image source={{ uri: pickedImageUri || avatarUrl }} style={styles.avatar} />
-      )}
-      <View style={styles.inlineRow}>
-        <TouchableOpacity onPress={pickAvatar} style={styles.chipBtn}>
-          <Text style={styles.chipText}>{labels.pickImage}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={uploadAvatar} style={[styles.chipBtn, styles.chipBtnActive]}>
-          <Text style={styles.chipTextActive}>{labels.uploadImage}</Text>
-        </TouchableOpacity>
-      </View>
-
-      <TextInput style={styles.input} value={name} onChangeText={setName} placeholder={labels.name} />
-      <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder={labels.phone} keyboardType="phone-pad" />
-      <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder={labels.email} keyboardType="email-address" autoCapitalize="none" />
-
-      <Text style={styles.sectionLabel}>Ngôn ngữ:</Text>
-      <View style={styles.inlineRow}>
-        {(['vi', 'en'] as const).map((l) => (
-          <TouchableOpacity
-            key={l}
-            onPress={() => setPreferredLanguage(l)}
-            style={[styles.chipBtn, preferredLanguage === l && styles.chipBtnActive]}
-          >
-            <Text style={[styles.chipText, preferredLanguage === l && styles.chipTextActive]}>{l.toUpperCase()}</Text>
-          </TouchableOpacity>
+    <ScrollView contentContainerStyle={S.authScroll}>
+      <View style={S.authCard}>
+        <Text style={S.authCardTitle}>Hồ sơ của bạn</Text>
+        <View style={S.avatarSection}>
+          {(avatarUrl || pickedUri) ? (
+            <Image source={{ uri: pickedUri || avatarUrl }} style={S.avatarImg} />
+          ) : (
+            <View style={S.avatarPlaceholder}><Text style={S.avatarPlaceholderText}>{profile?.name?.[0]?.toUpperCase() ?? 'U'}</Text></View>
+          )}
+          <View style={S.avatarBtns}>
+            <TouchableOpacity onPress={pickAvatar} style={S.avatarBtn}><Text style={S.avatarBtnText}>Chọn ảnh</Text></TouchableOpacity>
+            <TouchableOpacity onPress={uploadAvatar} style={[S.avatarBtn, S.avatarBtnPrimary]}><Text style={[S.avatarBtnText, { color: Colors.white }]}>Tải lên</Text></TouchableOpacity>
+          </View>
+        </View>
+        {[{ label: 'Họ tên', val: name, set: setName }, { label: 'Số điện thoại', val: phone, set: setPhone }, { label: 'Email', val: email, set: setEmail }].map(f => (
+          <View key={f.label} style={S.inputGroup}>
+            <Text style={S.inputLabel}>{f.label}</Text>
+            <TextInput style={S.input} value={f.val} onChangeText={f.set} placeholderTextColor={Colors.gray400} />
+          </View>
         ))}
+        <TouchableOpacity style={S.primaryBtn} onPress={save}><Text style={S.primaryBtnText}>Lưu thay đổi</Text></TouchableOpacity>
+        <TouchableOpacity style={S.outlineBtn} onPress={load}><Text style={S.outlineBtnText}>Tải lại</Text></TouchableOpacity>
       </View>
-
-      <TouchableOpacity style={styles.submitBtn} onPress={save}>
-        <Text style={styles.submitBtnText}>{labels.save}</Text>
-      </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#f3f4f6' },
-  container: { flex: 1, padding: 16 },
-  title: { fontSize: 24, fontWeight: '700', color: '#00af50', marginBottom: 12 },
-
-  // Top bar (driver screen)
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  topBarTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
-  logoutText: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
-
-  // Chat back bar
-  chatBackBar: {
-    backgroundColor: '#00af50',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  backBtn: {},
-  backBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-
-  // Tabs
-  tabs: { flexDirection: 'row', gap: 8, marginBottom: 10, flexWrap: 'wrap' },
-  tabBtn: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    backgroundColor: '#fff',
-  },
-  tabBtnActive: { borderColor: '#00af50', backgroundColor: '#f0fdf4' },
-  tabText: { color: '#6b7280', fontSize: 13 },
-  tabTextActive: { color: '#00af50', fontWeight: '600' },
-
-  // Language row
-  languageRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  langLabel: { color: '#6b7280', fontSize: 13 },
-  langButtons: { flexDirection: 'row', gap: 6 },
-  langBtn: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: '#fff',
-  },
-  langBtnActive: { borderColor: '#00af50', backgroundColor: '#f0fdf4' },
-  langBtnText: { color: '#6b7280', fontSize: 13 },
-  langBtnTextActive: { color: '#00af50', fontWeight: '600', fontSize: 13 },
-  logoutBtn: {
-    marginLeft: 'auto',
-    backgroundColor: '#fef2f2',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: '#fecaca',
-  },
-  logoutBtnText: { color: '#ef4444', fontSize: 13, fontWeight: '600' },
-
+const S = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: Colors.bgScreen },
+  // Header
+  header: { backgroundColor: Colors.primary, paddingHorizontal: Spacing.base, paddingVertical: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', ...Shadow.md },
+  logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  logoBadge: { width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.white, justifyContent: 'center', alignItems: 'center' },
+  logoBadgeText: { fontSize: 14, fontWeight: '900', color: Colors.primary },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: Colors.white },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  langToggle: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.full },
+  langToggleText: { color: Colors.white, fontWeight: '700', fontSize: 13 },
+  headerLogout: { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: Radius.full },
+  headerLogoutText: { color: Colors.white, fontSize: 13, fontWeight: '600' },
+  // Tab bar
+  tabBar: { flexDirection: 'row', backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.gray200, ...Shadow.sm },
+  tabItem: { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent' },
+  tabItemActive: { borderBottomColor: Colors.primary },
+  tabLabel: { fontSize: 13, fontWeight: '600', color: Colors.gray400 },
+  tabLabelActive: { color: Colors.primary },
+  // Loading bar
+  loadingBar: { backgroundColor: Colors.primaryDark, paddingVertical: 4, alignItems: 'center' },
   content: { flex: 1 },
-
-  // Panel
-  panel: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    gap: 10,
-    marginBottom: 16,
-  },
-  panelHeader: { fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 4 },
-
-  // Input
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: '#f9fafb',
-    fontSize: 15,
-    color: '#111827',
-  },
-
-  // Submit button
-  submitBtn: {
-    backgroundColor: '#00af50',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  submitBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-
-  // Chips
-  sectionLabel: { fontSize: 13, color: '#6b7280', marginTop: 4 },
-  inlineRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  chipBtn: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    backgroundColor: '#fff',
-  },
-  chipBtnActive: { borderColor: '#00af50', backgroundColor: '#f0fdf4' },
-  chipText: { color: '#6b7280', fontSize: 13 },
-  chipTextActive: { color: '#00af50', fontWeight: '600', fontSize: 13 },
-
-  // Refresh small
-  refreshSmallBtn: { alignSelf: 'flex-end' },
-  refreshSmallText: { color: '#3b82f6', fontSize: 13 },
-
+  // Top bar (driver)
+  topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: Spacing.base, paddingVertical: 12, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.gray200, ...Shadow.sm },
+  topBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  logoMini: { width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center' },
+  logoMiniText: { fontSize: 12, fontWeight: '900', color: Colors.white },
+  topBarTitle: { fontSize: 16, fontWeight: '700', color: Colors.gray900 },
+  logoutPill: { backgroundColor: Colors.dangerLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.full, borderWidth: 1, borderColor: Colors.danger },
+  logoutPillText: { color: Colors.danger, fontSize: 13, fontWeight: '600' },
+  // Chat header
+  chatHeader: { backgroundColor: Colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.base, paddingVertical: 12 },
+  backBtn: { paddingVertical: 4, paddingHorizontal: 8 },
+  backBtnText: { color: Colors.white, fontSize: 15, fontWeight: '600' },
+  chatHeaderTitle: { fontSize: 16, fontWeight: '700', color: Colors.white },
+  // Auth
+  authScroll: { flexGrow: 1, padding: Spacing.base },
+  authCard: { backgroundColor: Colors.white, borderRadius: Radius.xl, padding: Spacing.xl, ...Shadow.md, gap: 12 },
+  authHero: { alignItems: 'center', marginBottom: 8 },
+  authLogoBig: { width: 72, height: 72, borderRadius: 20, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center', marginBottom: 12, ...Shadow.primary },
+  authLogoBigText: { fontSize: 28, fontWeight: '900', color: Colors.white },
+  authHeroTitle: { fontSize: 22, fontWeight: '800', color: Colors.gray900, marginBottom: 4 },
+  authHeroSub: { fontSize: 14, color: Colors.gray400 },
+  authCardTitle: { fontSize: 20, fontWeight: '800', color: Colors.gray900, marginBottom: 4 },
+  inputGroup: { gap: 6 },
+  inputLabel: { fontSize: 13, fontWeight: '600', color: Colors.gray700 },
+  input: { backgroundColor: Colors.bgInput, borderWidth: 1.5, borderColor: Colors.gray200, borderRadius: Radius.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: Colors.gray900 },
+  primaryBtn: { backgroundColor: Colors.primary, borderRadius: Radius.lg, paddingVertical: 14, alignItems: 'center', ...Shadow.primary },
+  primaryBtnText: { color: Colors.white, fontWeight: '800', fontSize: 16 },
+  outlineBtn: { borderWidth: 1.5, borderColor: Colors.primary, borderRadius: Radius.lg, paddingVertical: 13, alignItems: 'center' },
+  outlineBtnText: { color: Colors.primary, fontWeight: '700', fontSize: 15 },
+  linkRow: { alignItems: 'center', paddingVertical: 4 },
+  linkText: { fontSize: 14, color: Colors.gray600 },
+  linkBold: { color: Colors.primary, fontWeight: '700' },
+  chipRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
+  chip: { flex: 1, paddingVertical: 10, borderRadius: Radius.md, borderWidth: 1.5, borderColor: Colors.gray200, alignItems: 'center', backgroundColor: Colors.white },
+  chipActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
+  chipText: { fontSize: 14, fontWeight: '600', color: Colors.gray600 },
+  chipTextActive: { color: Colors.primary },
   // Avatar
-  avatar: { width: 100, height: 100, borderRadius: 50, alignSelf: 'center' },
+  avatarSection: { alignItems: 'center', gap: 12, marginBottom: 8 },
+  avatarImg: { width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: Colors.primary },
+  avatarPlaceholder: { width: 90, height: 90, borderRadius: 45, backgroundColor: Colors.primaryLight, justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: Colors.primary },
+  avatarPlaceholderText: { fontSize: 32, fontWeight: '800', color: Colors.primary },
+  avatarBtns: { flexDirection: 'row', gap: 10 },
+  avatarBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: Radius.full, borderWidth: 1.5, borderColor: Colors.gray300 },
+  avatarBtnPrimary: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  avatarBtnText: { fontSize: 13, fontWeight: '600', color: Colors.gray700 },
 });
