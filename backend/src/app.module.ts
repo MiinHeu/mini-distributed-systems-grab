@@ -17,7 +17,6 @@ import { AdminModule } from './admin/admin.module';
 import { MessagesModule } from './messages/messages.module';
 import { RatingsModule } from './ratings/ratings.module';
 import { PaymentsModule } from './payments/payments.module';
-
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -32,6 +31,6 @@ import { PaymentsModule } from './payments/payments.module';
     PaymentsModule,
   ],
   controllers: [HealthController, TestDbController, ReportsController, AppController],
-  providers: [HealthService, LocationRouterService, DbRoutingService, AppService],
+  providers: [HealthService, AppService],
 })
 export class AppModule {}
