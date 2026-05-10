@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { HealthService } from './health.service';
 import { ok } from '../common/api-response';
+import { Region } from '../common/location.utils';
 
 @Controller('health')
 export class HealthController {
@@ -17,17 +18,23 @@ export class HealthController {
   @Get('north')
   async healthNorth() {
     const full = this.healthService.getFullHealth();
+    const serviceLevel = full.serviceLevel[Region.NORTH];
     return ok({
       nodes: {
-        northPrimary: full.nodes.northPrimary,
-        northReplica: full.nodes.northReplica,
+        NORTH_PRIMARY: full.nodes.NORTH_PRIMARY,
+        NORTH_REPLICA: full.nodes.NORTH_REPLICA,
       },
       serviceLevel: {
-        north: full.serviceLevel.north,
+        [Region.NORTH]: serviceLevel,
       },
       replication: {
-        north: full.replication.north,
+        [Region.NORTH]: full.replication[Region.NORTH],
       },
+      warning: serviceLevel === 'readonly'
+        ? 'Miền Bắc đang ở chế độ chỉ đọc. Primary DOWN, đang dùng Replica.'
+        : serviceLevel === 'unavailable'
+          ? 'Miền Bắc hiện không khả dụng. Cả Primary và Replica đều DOWN.'
+          : null,
       lastCheckedAt: full.lastCheckedAt,
       uptimeSeconds: full.uptimeSeconds,
     });
@@ -37,17 +44,23 @@ export class HealthController {
   @Get('south')
   async healthSouth() {
     const full = this.healthService.getFullHealth();
+    const serviceLevel = full.serviceLevel[Region.SOUTH];
     return ok({
       nodes: {
-        southPrimary: full.nodes.southPrimary,
-        southReplica: full.nodes.southReplica,
+        SOUTH_PRIMARY: full.nodes.SOUTH_PRIMARY,
+        SOUTH_REPLICA: full.nodes.SOUTH_REPLICA,
       },
       serviceLevel: {
-        south: full.serviceLevel.south,
+        [Region.SOUTH]: serviceLevel,
       },
       replication: {
-        south: full.replication.south,
+        [Region.SOUTH]: full.replication[Region.SOUTH],
       },
+      warning: serviceLevel === 'readonly'
+        ? 'Miền Nam đang ở chế độ chỉ đọc. Primary DOWN, đang dùng Replica.'
+        : serviceLevel === 'unavailable'
+          ? 'Miền Nam hiện không khả dụng. Cả Primary và Replica đều DOWN.'
+          : null,
       lastCheckedAt: full.lastCheckedAt,
       uptimeSeconds: full.uptimeSeconds,
     });
