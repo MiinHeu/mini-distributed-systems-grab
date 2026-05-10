@@ -3,7 +3,13 @@ export enum Region {
   SOUTH = 'SOUTH',
 }
 
+/**
+ * Ngưỡng phân vùng: vĩ độ >= 16.5 → Miền Bắc, < 16.5 → Miền Nam
+ * Thống nhất với LocationRouterService.getRegion()
+ * Vĩ độ 16.5 ≈ ranh giới Thừa Thiên Huế / Đà Nẵng
+ */
+export const REGION_LATITUDE_THRESHOLD = 16.5;
+
 export function determineRegionFromLocation(latitude: number): Region {
-  // Ranh giới tương đối: Vĩ độ > 16.0 (khoảng Đà Nẵng) là Miền Bắc, ngược lại là Miền Nam
-  return latitude > 16.0 ? Region.NORTH : Region.SOUTH;
+  return latitude >= REGION_LATITUDE_THRESHOLD ? Region.NORTH : Region.SOUTH;
 }
