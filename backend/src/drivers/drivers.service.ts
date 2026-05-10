@@ -172,7 +172,7 @@ export class DriversService {
    * Tìm tất cả driver records của 1 user_id trong 1 region
    * Dùng cho mobile: sau khi login, tìm driver_id của mình
    */
-  async getDriversByUserId(userId: number, region: Region = Region.NORTH) {
+  async getDriversByUserId(userId: number, regionRaw?: string) {
     const query = `
       SELECT id, user_id, vehicle_plate, vehicle_type, is_available,
              latitude, longitude, region, rating, total_trips
@@ -180,7 +180,18 @@ export class DriversService {
       WHERE user_id = $1
       ORDER BY created_at DESC
     `;
-    const { result } = await this.db.queryWithFailover(region, query, [userId], false);
-    return result.rows;
+    
+    // Nếu có region được chỉ định từ client (header/query), thử vùng đó trước
+    const targetRegion = regionRaw === 'NORTH' ? Region.NORTH : Region.SOUTH;
+    
+    for (const r of [targetRegion, targetRegion === Region.NORTH ? Region.SOUTH : Region.NORTH]) {
+      try {
+        const { result } = await this.db.queryWithFailover(r, query, [userId], false);
+        if (result.rowCount && result.rowCount > 0) return result.rows;
+      } catch (e) {
+        // Vùng này sập, thử vùng kia
+      }
+    }
+    return [];
   }
 }
