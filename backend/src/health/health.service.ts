@@ -1,12 +1,13 @@
 import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
 import { Pool } from 'pg';
 import { DatabaseService } from '../database/database.service';
+import { Region } from '../common/location.utils';
 
 type NodeKey =
-  | 'northPrimary'
-  | 'northReplica'
-  | 'southPrimary'
-  | 'southReplica';
+  | 'NORTH_PRIMARY'
+  | 'NORTH_REPLICA'
+  | 'SOUTH_PRIMARY'
+  | 'SOUTH_REPLICA';
 
 export type HealthSnapshot = Record<NodeKey, boolean>;
 
@@ -43,18 +44,18 @@ export type HealthTimelineEntry = {
 export type FullHealthResponse = {
   nodes: Record<NodeKey, NodeDetail>;
   serviceLevel: {
-    north: ServiceLevel;
-    south: ServiceLevel;
+    [Region.NORTH]: ServiceLevel;
+    [Region.SOUTH]: ServiceLevel;
   };
   replication: {
-    north: RegionReplicationStatus;
-    south: RegionReplicationStatus;
+    [Region.NORTH]: RegionReplicationStatus;
+    [Region.SOUTH]: RegionReplicationStatus;
   };
   lastCheckedAt: string | null;
   uptimeSeconds: number;
   tripCounts: {
-    north: number;
-    south: number;
+    [Region.NORTH]: number;
+    [Region.SOUTH]: number;
   };
 };
 
@@ -66,26 +67,26 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
   private readonly startedAt = Date.now();
 
   private statuses: HealthSnapshot = {
-    northPrimary: false,
-    northReplica: false,
-    southPrimary: false,
-    southReplica: false,
+    NORTH_PRIMARY: false,
+    NORTH_REPLICA: false,
+    SOUTH_PRIMARY: false,
+    SOUTH_REPLICA: false,
   };
 
   private responseTimes: Record<NodeKey, number | null> = {
-    northPrimary: null,
-    northReplica: null,
-    southPrimary: null,
-    southReplica: null,
+    NORTH_PRIMARY: null,
+    NORTH_REPLICA: null,
+    SOUTH_PRIMARY: null,
+    SOUTH_REPLICA: null,
   };
 
-  private replicationData: Record<'north' | 'south', RegionReplicationStatus> = {
-    north: { connected: false, replicas: [] },
-    south: { connected: false, replicas: [] },
+  private replicationData: Record<Region, RegionReplicationStatus> = {
+    [Region.NORTH]: { connected: false, replicas: [] },
+    [Region.SOUTH]: { connected: false, replicas: [] },
   };
 
   private lastCheckedAt: string | null = null;
-  private tripCounts = { north: 0, south: 0 };
+  private tripCounts = { [Region.NORTH]: 0, [Region.SOUTH]: 0 };
 
   // Server-side timeline (last 100 events)
   private timeline: HealthTimelineEntry[] = [];
@@ -143,7 +144,7 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
 
         for (const r of replicas) {
           this.logger.log(
-            `[HealthMonitor] ${region} Replication - App: ${r.applicationName}, State: ${r.state}, Sync: ${r.syncState}`,
+            `[HealthMonitor] Đồng bộ ${region} - App: ${r.applicationName}, Trạng thái: ${r.state}, Kiểu: ${r.syncState}`,
           );
         }
 
@@ -151,12 +152,12 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
       }
 
       this.logger.warn(
-        `[HealthMonitor] ${region} Primary is UP, but NO replicas are connected or replicating.`,
+        `[HealthMonitor] Node ${region} PRIMARY đang online, nhưng CHƯA CÓ bản sao (Replica) nào kết nối.`,
       );
       return { connected: false, replicas: [] };
     } catch (e) {
       this.logger.error(
-        `[HealthMonitor] Failed to read pg_stat_replication for ${region}: ${e.message}`,
+        `[HealthMonitor] Lỗi khi đọc trạng thái đồng bộ cho vùng ${region}: ${e.message}`,
       );
       return { connected: false, replicas: [] };
     }
@@ -172,17 +173,17 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
       ]);
 
     const newStatuses: HealthSnapshot = {
-      northPrimary: northPrimary.alive,
-      northReplica: northReplica.alive,
-      southPrimary: southPrimary.alive,
-      southReplica: southReplica.alive,
+      NORTH_PRIMARY: northPrimary.alive,
+      NORTH_REPLICA: northReplica.alive,
+      SOUTH_PRIMARY: southPrimary.alive,
+      SOUTH_REPLICA: southReplica.alive,
     };
 
     this.responseTimes = {
-      northPrimary: northPrimary.responseTimeMs,
-      northReplica: northReplica.responseTimeMs,
-      southPrimary: southPrimary.responseTimeMs,
-      southReplica: southReplica.responseTimeMs,
+      NORTH_PRIMARY: northPrimary.responseTimeMs,
+      NORTH_REPLICA: northReplica.responseTimeMs,
+      SOUTH_PRIMARY: southPrimary.responseTimeMs,
+      SOUTH_REPLICA: southReplica.responseTimeMs,
     };
 
     // Detect changes and record timeline
@@ -190,8 +191,8 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
       const changes: string[] = [];
       for (const key of Object.keys(newStatuses) as NodeKey[]) {
         if (this.previousSnapshot[key] !== newStatuses[key]) {
-          const from = this.previousSnapshot[key] ? 'online' : 'offline';
-          const to = newStatuses[key] ? 'online' : 'offline';
+          const from = this.previousSnapshot[key] ? 'ONLINE' : 'OFFLINE';
+          const to = newStatuses[key] ? 'ONLINE' : 'OFFLINE';
           changes.push(`${key}: ${from} → ${to}`);
         }
       }
@@ -204,7 +205,7 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
         if (this.timeline.length > 100) {
           this.timeline = this.timeline.slice(0, 100);
         }
-        this.logger.warn(`[HealthMonitor] Status changed: ${changes.join(', ')}`);
+        this.logger.warn(`[HealthMonitor] Trạng thái thay đổi: ${changes.join(', ')}`);
       }
     }
 
@@ -214,38 +215,38 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
 
     // Fetch replication info from online primaries
     const [northRepl, southRepl] = await Promise.all([
-      newStatuses.northPrimary
-        ? this.checkReplication(this.databaseService.northPrimary, 'North')
+      newStatuses.NORTH_PRIMARY
+        ? this.checkReplication(this.databaseService.northPrimary, 'MIỀN BẮC')
         : Promise.resolve({ connected: false, replicas: [] } as RegionReplicationStatus),
-      newStatuses.southPrimary
-        ? this.checkReplication(this.databaseService.southPrimary, 'South')
+      newStatuses.SOUTH_PRIMARY
+        ? this.checkReplication(this.databaseService.southPrimary, 'MIỀN NAM')
         : Promise.resolve({ connected: false, replicas: [] } as RegionReplicationStatus),
     ]);
 
     this.replicationData = {
-      north: northRepl,
-      south: southRepl,
+      [Region.NORTH]: northRepl,
+      [Region.SOUTH]: southRepl,
     };
 
     // Đếm số lượng chuyến đi trong từng vùng
     const [northCount, southCount] = await Promise.all([
-      newStatuses.northPrimary || newStatuses.northReplica
+      newStatuses.NORTH_PRIMARY || newStatuses.NORTH_REPLICA
         ? (async () => {
-            const ds = newStatuses.northPrimary ? this.databaseService.northPrimary : this.databaseService.northReplica;
+            const ds = newStatuses.NORTH_PRIMARY ? this.databaseService.northPrimary : this.databaseService.northReplica;
             const res = await ds.query('SELECT COUNT(*) FROM trips');
             return parseInt(res.rows[0].count);
           })()
         : Promise.resolve(0),
-      newStatuses.southPrimary || newStatuses.southReplica
+      newStatuses.SOUTH_PRIMARY || newStatuses.SOUTH_REPLICA
         ? (async () => {
-            const ds = newStatuses.southPrimary ? this.databaseService.southPrimary : this.databaseService.southReplica;
+            const ds = newStatuses.SOUTH_PRIMARY ? this.databaseService.southPrimary : this.databaseService.southReplica;
             const res = await ds.query('SELECT COUNT(*) FROM trips');
             return parseInt(res.rows[0].count);
           })()
         : Promise.resolve(0),
     ]);
 
-    this.tripCounts = { north: northCount, south: southCount };
+    this.tripCounts = { [Region.NORTH]: northCount, [Region.SOUTH]: southCount };
   }
 
   snapshot(): HealthSnapshot {
@@ -256,30 +257,30 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
   getFullHealth(): FullHealthResponse {
     return {
       nodes: {
-        northPrimary: {
-          status: this.statuses.northPrimary ? 'online' : 'offline',
-          responseTimeMs: this.responseTimes.northPrimary,
+        NORTH_PRIMARY: {
+          status: this.statuses.NORTH_PRIMARY ? 'online' : 'offline',
+          responseTimeMs: this.responseTimes.NORTH_PRIMARY,
         },
-        northReplica: {
-          status: this.statuses.northReplica ? 'online' : 'offline',
-          responseTimeMs: this.responseTimes.northReplica,
+        NORTH_REPLICA: {
+          status: this.statuses.NORTH_REPLICA ? 'online' : 'offline',
+          responseTimeMs: this.responseTimes.NORTH_REPLICA,
         },
-        southPrimary: {
-          status: this.statuses.southPrimary ? 'online' : 'offline',
-          responseTimeMs: this.responseTimes.southPrimary,
+        SOUTH_PRIMARY: {
+          status: this.statuses.SOUTH_PRIMARY ? 'online' : 'offline',
+          responseTimeMs: this.responseTimes.SOUTH_PRIMARY,
         },
-        southReplica: {
-          status: this.statuses.southReplica ? 'online' : 'offline',
-          responseTimeMs: this.responseTimes.southReplica,
+        SOUTH_REPLICA: {
+          status: this.statuses.SOUTH_REPLICA ? 'online' : 'offline',
+          responseTimeMs: this.responseTimes.SOUTH_REPLICA,
         },
       },
       serviceLevel: {
-        north: this.serviceLevelForRegion('north'),
-        south: this.serviceLevelForRegion('south'),
+        [Region.NORTH]: this.serviceLevelForRegion(Region.NORTH),
+        [Region.SOUTH]: this.serviceLevelForRegion(Region.SOUTH),
       },
       replication: {
-        north: this.replicationData.north,
-        south: this.replicationData.south,
+        [Region.NORTH]: this.replicationData[Region.NORTH],
+        [Region.SOUTH]: this.replicationData[Region.SOUTH],
       },
       lastCheckedAt: this.lastCheckedAt,
       uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1000),
@@ -292,15 +293,15 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
     return [...this.timeline];
   }
 
-  serviceLevelForRegion(region: 'north' | 'south'): ServiceLevel {
+  serviceLevelForRegion(region: Region): ServiceLevel {
     const primaryHealthy =
-      region === 'north'
-        ? this.statuses.northPrimary
-        : this.statuses.southPrimary;
+      region === Region.NORTH
+        ? this.statuses.NORTH_PRIMARY
+        : this.statuses.SOUTH_PRIMARY;
     const replicaHealthy =
-      region === 'north'
-        ? this.statuses.northReplica
-        : this.statuses.southReplica;
+      region === Region.NORTH
+        ? this.statuses.NORTH_REPLICA
+        : this.statuses.SOUTH_REPLICA;
 
     if (primaryHealthy) return 'full';
     if (replicaHealthy) return 'readonly';
@@ -308,18 +309,18 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
   }
 
   isNorthPrimaryHealthy() {
-    return this.statuses.northPrimary;
+    return this.statuses.NORTH_PRIMARY;
   }
 
   isNorthReplicaHealthy() {
-    return this.statuses.northReplica;
+    return this.statuses.NORTH_REPLICA;
   }
 
   isSouthPrimaryHealthy() {
-    return this.statuses.southPrimary;
+    return this.statuses.SOUTH_PRIMARY;
   }
 
   isSouthReplicaHealthy() {
-    return this.statuses.southReplica;
+    return this.statuses.SOUTH_REPLICA;
   }
 }
