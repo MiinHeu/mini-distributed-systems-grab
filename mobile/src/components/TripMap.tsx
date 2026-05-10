@@ -1,5 +1,5 @@
 import React from 'react';
-import MapView, { Marker, Polyline, UrlTile } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Point } from '../types/trip';
 
 type Props = {
