@@ -72,6 +72,36 @@ CREATE TABLE IF NOT EXISTS messages (
 -- Index để query lịch sử chat theo trip
 CREATE INDEX IF NOT EXISTS idx_messages_trip_id ON messages(trip_id, created_at);
 
+-- Bảng ratings (Người 5 — Tầng 2: Đánh giá tài xế)
+CREATE TABLE IF NOT EXISTS ratings (
+  id SERIAL PRIMARY KEY,
+  trip_id INT REFERENCES trips(id) ON DELETE CASCADE,
+  customer_id INT REFERENCES users(id),
+  driver_id UUID REFERENCES drivers(id),
+  score NUMERIC(2,1) NOT NULL CHECK (score >= 1 AND score <= 5),
+  comment TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Index để query đánh giá theo tài xế
+CREATE INDEX IF NOT EXISTS idx_ratings_driver_id ON ratings(driver_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ratings_trip_customer ON ratings(trip_id, customer_id);
+
+-- Bảng payments (Người 5 — Tầng 3: Thanh toán)
+CREATE TABLE IF NOT EXISTS payments (
+  id SERIAL PRIMARY KEY,
+  trip_id INT REFERENCES trips(id) ON DELETE CASCADE,
+  amount DECIMAL(12,2) NOT NULL,
+  method VARCHAR(10) DEFAULT 'cash' CHECK (method IN ('cash', 'vnpay')),
+  status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
+  vnpay_transaction_id VARCHAR(100),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Index để query thanh toán theo trip
+CREATE INDEX IF NOT EXISTS idx_payments_trip_id ON payments(trip_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+
 -- Seed data mẫu để test
 -- Passwords đều là "password123" (bcrypt hash hợp lệ)
 INSERT INTO users (name, phone, email, password, role) VALUES
