@@ -1,49 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  Switch,
-  StyleSheet,
-  Alert,
-  TouchableOpacity,
-  ActivityIndicator,
-  ScrollView,
-  RefreshControl,
-} from 'react-native';
+import { View, Text, Switch, StyleSheet, Alert, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl } from 'react-native';
 import * as Location from 'expo-location';
 import axios from 'axios';
 import { API_BASE_URL } from '../config';
 import { reverseGeocode } from '../utils/location';
+import { Colors, Spacing, Radius, Shadow } from '../theme';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+interface DriverInfo { id: string; user_id: number; vehicle_plate: string; vehicle_type: string; region: string; rating: number; total_trips: number; }
+interface Trip { id: number; pickup_address: string; dropoff_address: string; fare: number; status: string; customer_id: number; region: string; }
+interface DriverHomeScreenProps { token: string; userId: number; onOpenChat?: (tripId: number, receiverId: number, receiverName: string) => void; }
 
-interface DriverInfo {
-  id: string;           // UUID của driver
-  user_id: number;
-  vehicle_plate: string;
-  vehicle_type: string;
-  region: string;
-  rating: number;
-  total_trips: number;
-}
-
-interface Trip {
-  id: number;
-  pickup_address: string;
-  dropoff_address: string;
-  fare: number;
-  status: string;
-  customer_id: number;
-  region: string;
-}
-
-interface DriverHomeScreenProps {
-  token: string;
-  userId: number;
-  onOpenChat?: (tripId: number, receiverId: number, receiverName: string) => void;
-}
-
-// ─── Component ───────────────────────────────────────────────────────────────
+const VEHICLE_ICON: Record<string, string> = { bike: '🏍️', car: '🚗', truck: '🚛' };
 
 export default function DriverHomeScreen({ token, userId, onOpenChat }: DriverHomeScreenProps) {
   const [isAvailable, setIsAvailable] = useState(false);
@@ -52,273 +19,203 @@ export default function DriverHomeScreen({ token, userId, onOpenChat }: DriverHo
   const [pendingTrips, setPendingTrips] = useState<Trip[]>([]);
   const [isLoadingDriver, setIsLoadingDriver] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [lastUpdateTime, setLastUpdateTime] = useState<string>('');
-  const [currentAddress, setCurrentAddress] = useState<string>('Đang xác định vị trí...');
-
+  const [currentAddress, setCurrentAddress] = useState('Đang xác định vị trí...');
+  const [lastUpdateTime, setLastUpdateTime] = useState('');
   const locationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const api = axios.create({
-    baseURL: API_BASE_URL,
-    headers: { Authorization: `Bearer ${token}` },
-    timeout: 8000,
-  });
+  const api = axios.create({ baseURL: API_BASE_URL, headers: { Authorization: `Bearer ${token}` }, timeout: 8000 });
 
-  useEffect(() => {
-    loadDriverInfo();
-    return () => {
-      stopLocationTracking();
-      stopPollingTrips();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isAvailable && driverInfo) {
-      startPollingTrips();
-    } else {
-      stopPollingTrips();
-    }
-  }, [isAvailable, driverInfo]);
+  useEffect(() => { loadDriverInfo(); return () => { stopLocationTracking(); stopPollingTrips(); }; }, []);
+  useEffect(() => { if (isAvailable && driverInfo) startPollingTrips(); else stopPollingTrips(); }, [isAvailable, driverInfo]);
 
   const loadDriverInfo = async () => {
     setIsLoadingDriver(true);
     try {
       for (const region of ['NORTH', 'SOUTH']) {
         try {
-          const res = await api.get<{ data: DriverInfo[] }>(
-            `/drivers/by-user/${userId}?region=${region}`,
-          );
+          const res = await api.get<{ data: DriverInfo[] }>(`/drivers/by-user/${userId}?region=${region}`);
           const drivers = res.data?.data ?? [];
-          if (drivers.length > 0) {
-            setDriverInfo(drivers[0]);
-            setIsLoadingDriver(false);
-            return;
-          }
-        } catch {
-          // ignore
-        }
+          if (drivers.length > 0) { setDriverInfo(drivers[0]); setIsLoadingDriver(false); return; }
+        } catch {}
       }
-      setErrorMsg('Tài khoản này chưa có hồ sơ tài xế.');
-    } catch {
-      setErrorMsg('Không thể tải thông tin tài xế.');
-    } finally {
-      setIsLoadingDriver(false);
-    }
+    } catch {} finally { setIsLoadingDriver(false); }
   };
 
   const loadPendingTrips = async () => {
     if (!driverInfo) return;
-    try {
-      const res = await api.get<{ trips: Trip[] }>(`/trips/pending?region=${driverInfo.region}`);
-      setPendingTrips(res.data.trips || []);
-    } catch (err) {
-      console.warn('Fetch trips failed:', err);
-    }
+    try { const res = await api.get<{ trips: Trip[] }>(`/trips/pending?region=${driverInfo.region}`); setPendingTrips(res.data.trips || []); } catch {}
   };
 
-  const startPollingTrips = () => {
-    loadPendingTrips();
-    pollTimerRef.current = setInterval(loadPendingTrips, 5000);
-  };
-
-  const stopPollingTrips = () => {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    setPendingTrips([]);
-  };
+  const startPollingTrips = () => { loadPendingTrips(); pollTimerRef.current = setInterval(loadPendingTrips, 5000); };
+  const stopPollingTrips = () => { if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; } setPendingTrips([]); };
 
   const handleAcceptTrip = async (tripId: number) => {
     try {
       await api.patch(`/trips/${tripId}/accept`);
-      Alert.alert('Thành công', 'Bạn đã nhận chuyến xe này!');
+      Alert.alert('Thành công!', 'Bạn đã nhận chuyến xe này!');
       loadPendingTrips();
-      // Sau này có thể chuyển sang màn hình Trip Detail hoặc Chat
       if (onOpenChat) onOpenChat(tripId, 1, 'Khách hàng');
-    } catch (error: any) {
-      const msg = error?.response?.data?.message || 'Không thể nhận chuyến';
-      Alert.alert('Lỗi', msg);
-    }
+    } catch (e: any) { Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể nhận chuyến'); }
   };
 
   const toggleSwitch = async () => {
     if (!driverInfo) return;
-    const newValue = !isAvailable;
+    const newVal = !isAvailable;
     try {
-      setIsAvailable(newValue);
-      await api.patch('/drivers/availability', {
-        driver_id: driverInfo.id,
-        is_available: newValue,
-        region: driverInfo.region,
-      });
-      if (newValue) {
-        await startLocationTracking();
-      } else {
-        stopLocationTracking();
-      }
-    } catch (error: any) {
-      setIsAvailable(!newValue);
-      stopLocationTracking();
-      const msg = error?.response?.data?.message || error.message || 'Lỗi không xác định';
-      Alert.alert('Lỗi cập nhật', `Chi tiết: ${msg}`);
-    }
+      setIsAvailable(newVal);
+      await api.patch('/drivers/availability', { driver_id: driverInfo.id, is_available: newVal, region: driverInfo.region });
+      if (newVal) await startLocationTracking(); else stopLocationTracking();
+    } catch (e: any) { setIsAvailable(!newVal); stopLocationTracking(); Alert.alert('Lỗi cập nhật', e?.response?.data?.message || e.message); }
   };
 
   const startLocationTracking = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      setIsAvailable(false);
-      return;
-    }
+    if (status !== 'granted') { setIsAvailable(false); return; }
     await sendLocationUpdate();
     locationTimerRef.current = setInterval(sendLocationUpdate, 10000);
   };
 
-  const stopLocationTracking = () => {
-    if (locationTimerRef.current) {
-      clearInterval(locationTimerRef.current);
-      locationTimerRef.current = null;
-    }
-  };
+  const stopLocationTracking = () => { if (locationTimerRef.current) { clearInterval(locationTimerRef.current); locationTimerRef.current = null; } };
 
   const sendLocationUpdate = async () => {
     if (!driverInfo) return;
     try {
-      const currentLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setLocation(currentLocation);
-      
-      // Lấy địa chỉ chữ
-      const addr = await reverseGeocode(currentLocation.coords.latitude, currentLocation.coords.longitude);
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setLocation(loc);
+      const addr = await reverseGeocode(loc.coords.latitude, loc.coords.longitude);
       setCurrentAddress(addr);
-
-      await api.patch('/drivers/location', {
-        driver_id: driverInfo.id,
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
-      });
+      await api.patch('/drivers/location', { driver_id: driverInfo.id, latitude: loc.coords.latitude, longitude: loc.coords.longitude });
       setLastUpdateTime(new Date().toLocaleTimeString('vi-VN'));
-    } catch (error) {
-      console.warn('GPS Update Failed');
-    }
+    } catch {}
   };
 
-  if (isLoadingDriver) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#00af50" />
-      </View>
-    );
-  }
+  if (isLoadingDriver) return <View style={S.centered}><ActivityIndicator size="large" color={Colors.primary} /></View>;
 
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView 
-        style={styles.container}
-        refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={loadPendingTrips} />
-        }
-      >
-        <Text style={styles.title}>Mini Grab — Tài xế</Text>
-
-        {driverInfo && (
-          <View style={styles.infoBox}>
-            <Text style={styles.infoText}>Biển số: {driverInfo.vehicle_plate} | {driverInfo.region}</Text>
-            <Text style={styles.infoText}>Đánh giá: ⭐ {driverInfo.rating} ({driverInfo.total_trips} chuyến)</Text>
+    <ScrollView style={S.container} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={async () => { setIsRefreshing(true); await loadPendingTrips(); setIsRefreshing(false); }} colors={[Colors.primary]} />}>
+      {/* Driver info card */}
+      {driverInfo && (
+        <View style={S.infoCard}>
+          <View style={S.infoCardLeft}>
+            <View style={S.vehicleIcon}><Text style={S.vehicleIconText}>{VEHICLE_ICON[driverInfo.vehicle_type] || '🚗'}</Text></View>
+            <View>
+              <Text style={S.vehiclePlate}>{driverInfo.vehicle_plate}</Text>
+              <Text style={S.vehicleType}>{driverInfo.vehicle_type.toUpperCase()}</Text>
+            </View>
           </View>
-        )}
-
-        <View style={styles.statusBox}>
-          <Text style={[styles.statusValue, isAvailable ? styles.statusOnline : styles.statusOffline]}>
-            {isAvailable ? '🟢 Đang trực' : '🔴 Đang nghỉ'}
-          </Text>
-          <Switch value={isAvailable} onValueChange={toggleSwitch} />
+          <View style={S.infoCardRight}>
+            <View style={S.regionBadge}><Text style={S.regionBadgeText}>{driverInfo.region === 'NORTH' ? 'Miền Bắc' : 'Miền Nam'}</Text></View>
+            <Text style={S.ratingText}>{driverInfo.rating.toFixed(1)} sao  {driverInfo.total_trips} chuyến</Text>
+          </View>
         </View>
+      )}
 
-        {isAvailable && (
-          <View style={styles.locationInfo}>
-            <Text style={styles.locationLabel}>📍 Vị trí hiện tại:</Text>
-            <Text style={styles.locationAddress}>{currentAddress}</Text>
-            <Text style={styles.locationCoords}>
-              ({location?.coords.latitude.toFixed(5)}, {location?.coords.longitude.toFixed(5)}) - {lastUpdateTime}
-            </Text>
+      {/* Status toggle */}
+      <View style={[S.statusCard, isAvailable && S.statusCardActive]}>
+        <View style={S.statusLeft}>
+          <View style={[S.statusDot, { backgroundColor: isAvailable ? Colors.primary : Colors.gray300 }]} />
+          <View>
+            <Text style={S.statusTitle}>{isAvailable ? 'Đang sẵn sàng đón khách' : 'Đang nghỉ'}</Text>
+            <Text style={S.statusSub}>{isAvailable ? 'Bạn đang nhận chuyến' : 'Bật để bắt đầu nhận chuyến'}</Text>
           </View>
-        )}
+        </View>
+        <Switch value={isAvailable} onValueChange={toggleSwitch} trackColor={{ false: Colors.gray200, true: Colors.primaryLight }} thumbColor={isAvailable ? Colors.primary : Colors.gray400} />
+      </View>
 
-        {isAvailable && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Chuyến xe đang chờ ({pendingTrips.length})</Text>
-            {pendingTrips.length === 0 ? (
-              <Text style={styles.emptyText}>Chưa có chuyến nào trong khu vực của bạn.</Text>
-            ) : (
-              pendingTrips.map((trip) => (
-                <View key={trip.id} style={styles.tripCard}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.tripAddress}>Đón: {trip.pickup_address}</Text>
-                    <Text style={styles.tripAddress}>Trả: {trip.dropoff_address}</Text>
-                    <Text style={styles.tripFare}>{trip.fare.toLocaleString('vi-VN')}đ</Text>
-                  </View>
-                  <TouchableOpacity 
-                    style={styles.acceptBtn} 
-                    onPress={() => handleAcceptTrip(trip.id)}
-                  >
-                    <Text style={styles.acceptBtnText}>NHẬN</Text>
+      {/* Location card */}
+      {isAvailable && (
+        <View style={S.locationCard}>
+          <Text style={S.locationTitle}>Vị trí hiện tại</Text>
+          <Text style={S.locationAddress}>{currentAddress}</Text>
+          {location && <Text style={S.locationCoords}>{location.coords.latitude.toFixed(5)}, {location.coords.longitude.toFixed(5)}</Text>}
+          {lastUpdateTime && <Text style={S.locationTime}>Cập nhật lúc {lastUpdateTime}</Text>}
+        </View>
+      )}
+
+      {/* Pending trips */}
+      {isAvailable && (
+        <View style={S.section}>
+          <View style={S.sectionHeader}>
+            <Text style={S.sectionTitle}>Chuyến đang chờ</Text>
+            <View style={S.countBadge}><Text style={S.countBadgeText}>{pendingTrips.length}</Text></View>
+          </View>
+          {pendingTrips.length === 0 ? (
+            <View style={S.emptyTrips}>
+              <Text style={S.emptyTripsText}>Chưa có chuyến nào trong khu vực của bạn.</Text>
+              <Text style={S.emptyTripsHint}>Hệ thống tự động cập nhật mỗi 5 giây</Text>
+            </View>
+          ) : (
+            pendingTrips.map((trip) => (
+              <View key={trip.id} style={S.tripCard}>
+                <View style={S.tripCardHeader}>
+                  <Text style={S.tripCardId}>Chuyến #{trip.id}</Text>
+                  <Text style={S.tripCardRegion}>{trip.region === 'NORTH' ? 'Miền Bắc' : 'Miền Nam'}</Text>
+                </View>
+                <View style={S.tripRoute}>
+                  <View style={S.tripRouteRow}><View style={S.dotGreen} /><Text style={S.tripRouteText} numberOfLines={1}>{trip.pickup_address}</Text></View>
+                  <View style={S.tripRouteLine} />
+                  <View style={S.tripRouteRow}><View style={S.dotRed} /><Text style={S.tripRouteText} numberOfLines={1}>{trip.dropoff_address}</Text></View>
+                </View>
+                <View style={S.tripCardFooter}>
+                  <Text style={S.tripFare}>{Number(trip.fare).toLocaleString('vi-VN')}đ</Text>
+                  <TouchableOpacity style={S.acceptBtn} onPress={() => handleAcceptTrip(trip.id)}>
+                    <Text style={S.acceptBtnText}>NHẬN CHUYẾN</Text>
                   </TouchableOpacity>
                 </View>
-              ))
-            )}
-          </View>
-        )}
-      </ScrollView>
-    </View>
+              </View>
+            ))
+          )}
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#f9fafb' },
+const S = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.bgScreen },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  title: { fontSize: 20, fontWeight: '700', color: '#00af50', marginBottom: 16, textAlign: 'center' },
-  infoBox: { backgroundColor: '#fff', padding: 12, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: '#e5e7eb' },
-  infoText: { fontSize: 13, color: '#6b7280' },
-  statusBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', padding: 16, borderRadius: 8, marginBottom: 16, borderWidth: 1, borderColor: '#e5e7eb' },
-  statusValue: { fontSize: 16, fontWeight: '600' },
-  statusOnline: { color: '#059669' },
-  statusOffline: { color: '#6b7280' },
-  section: { marginTop: 8 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#374151', marginBottom: 12 },
-  emptyText: { textAlign: 'center', color: '#9ca3af', marginTop: 20 },
-  tripCard: { backgroundColor: '#fff', padding: 14, borderRadius: 8, marginBottom: 10, borderWidth: 1, borderColor: '#e5e7eb', flexDirection: 'row', alignItems: 'center' },
-  tripAddress: { fontSize: 14, color: '#374151', marginBottom: 2 },
-  tripFare: { fontSize: 15, fontWeight: '700', color: '#00af50', marginTop: 4 },
-  acceptBtn: { backgroundColor: '#00af50', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 6 },
-  acceptBtnText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  locationInfo: {
-    backgroundColor: '#fff',
-    padding: 15,
-    marginHorizontal: 15,
-    borderRadius: 12,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  locationLabel: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  locationAddress: {
-    fontSize: 15,
-    color: '#333',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  locationCoords: {
-    fontSize: 11,
-    color: '#999',
-  },
+  infoCard: { margin: Spacing.base, backgroundColor: Colors.white, borderRadius: Radius.xl, padding: Spacing.base, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', ...Shadow.md },
+  infoCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  vehicleIcon: { width: 48, height: 48, borderRadius: 14, backgroundColor: Colors.primaryLight, justifyContent: 'center', alignItems: 'center' },
+  vehicleIconText: { fontSize: 22 },
+  vehiclePlate: { fontSize: 18, fontWeight: '800', color: Colors.gray900 },
+  vehicleType: { fontSize: 12, color: Colors.gray400, fontWeight: '600', marginTop: 2 },
+  infoCardRight: { alignItems: 'flex-end', gap: 6 },
+  regionBadge: { backgroundColor: Colors.accentLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: Radius.full },
+  regionBadgeText: { fontSize: 12, fontWeight: '700', color: Colors.accent },
+  ratingText: { fontSize: 12, color: Colors.gray600 },
+  statusCard: { marginHorizontal: Spacing.base, marginBottom: Spacing.md, backgroundColor: Colors.white, borderRadius: Radius.xl, padding: Spacing.base, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 2, borderColor: Colors.gray200, ...Shadow.sm },
+  statusCardActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
+  statusLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  statusDot: { width: 12, height: 12, borderRadius: 6 },
+  statusTitle: { fontSize: 15, fontWeight: '700', color: Colors.gray900 },
+  statusSub: { fontSize: 12, color: Colors.gray400, marginTop: 2 },
+  locationCard: { marginHorizontal: Spacing.base, marginBottom: Spacing.md, backgroundColor: Colors.white, borderRadius: Radius.xl, padding: Spacing.base, ...Shadow.sm },
+  locationTitle: { fontSize: 12, fontWeight: '700', color: Colors.gray400, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  locationAddress: { fontSize: 15, fontWeight: '600', color: Colors.gray900, marginBottom: 4 },
+  locationCoords: { fontSize: 12, color: Colors.gray400, fontFamily: 'monospace' },
+  locationTime: { fontSize: 11, color: Colors.primary, marginTop: 4, fontWeight: '600' },
+  section: { marginHorizontal: Spacing.base, marginBottom: Spacing.base },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  sectionTitle: { fontSize: 17, fontWeight: '800', color: Colors.gray900 },
+  countBadge: { backgroundColor: Colors.primary, paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.full },
+  countBadgeText: { fontSize: 12, fontWeight: '800', color: Colors.white },
+  emptyTrips: { backgroundColor: Colors.white, borderRadius: Radius.xl, padding: 24, alignItems: 'center', ...Shadow.sm },
+  emptyTripsText: { fontSize: 15, color: Colors.gray600, textAlign: 'center', fontWeight: '500' },
+  emptyTripsHint: { fontSize: 12, color: Colors.gray400, marginTop: 6 },
+  tripCard: { backgroundColor: Colors.white, borderRadius: Radius.xl, padding: Spacing.base, marginBottom: 10, ...Shadow.md },
+  tripCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  tripCardId: { fontSize: 15, fontWeight: '800', color: Colors.gray900 },
+  tripCardRegion: { fontSize: 11, fontWeight: '700', color: Colors.accent, backgroundColor: Colors.accentLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: Radius.full },
+  tripRoute: { backgroundColor: Colors.gray50, borderRadius: Radius.md, padding: 12, marginBottom: 12 },
+  tripRouteRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  tripRouteLine: { width: 2, height: 12, backgroundColor: Colors.gray300, marginLeft: 7, marginVertical: 2 },
+  tripRouteText: { flex: 1, fontSize: 14, color: Colors.gray700 },
+  dotGreen: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.primary },
+  dotRed: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.danger },
+  tripCardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  tripFare: { fontSize: 20, fontWeight: '900', color: Colors.gray900 },
+  acceptBtn: { backgroundColor: Colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: Radius.lg, ...Shadow.primary },
+  acceptBtnText: { color: Colors.white, fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
 });
