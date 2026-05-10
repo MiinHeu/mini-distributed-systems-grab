@@ -1,43 +1,187 @@
-### Health (nodes + serviceLevel)
-GET http://localhost:3000/health
+### ═══════════════════════════════════════════════════════════════
+### TEST CASES TC-01 đến TC-10 — Đề tài 4 CSDL Phân tán
+### Chạy theo thứ tự. Xem integration-guide.md để biết kết quả mong đợi.
+### ═══════════════════════════════════════════════════════════════
 
-### Trip history (READ) — SOUTH
-GET http://localhost:3000/trips/history?latitude=10.77
+@baseUrl = http://localhost:3000
+@token = Bearer <paste_token_here>
 
-### Trip history (READ) — NORTH
-GET http://localhost:3000/trips/history?latitude=21.03
+### ─── AUTH (lấy token trước) ────────────────────────────────────
 
-### Book trip (WRITE) — SOUTH (should fail with 503 when south primary is down)
-POST http://localhost:3000/trips/book
+### Đăng nhập customer
+POST {{baseUrl}}/auth/login
 Content-Type: application/json
 
 {
-  "latitude": 10.77,
-  "note": "demo booking from requests.http"
+  "email": "customer@test.com",
+  "password": "password123"
 }
 
-### Book trip (WRITE) — NORTH (should fail with 503 when north primary is down)
-POST http://localhost:3000/trips/book
+###
+
+### ─── TC-01: Định tuyến theo thành phố → Hà Nội → NORTH ────────
+
+POST {{baseUrl}}/trips/book
+Authorization: {{token}}
 Content-Type: application/json
 
 {
-  "latitude": 21.03,
-  "note": "demo booking from requests.http"
+  "pickup_lat": 21.0285,
+  "pickup_lng": 105.8542,
+  "dropoff_lat": 21.0358,
+  "dropoff_lng": 105.7828,
+  "pickup": "Hoàn Kiếm, Hà Nội",
+  "dropoff": "Cầu Giấy, Hà Nội",
+  "fare": 85000
 }
 
-### Low-level DB routing test (READ)
-POST http://localhost:3000/test-db/read
+### Kết quả mong đợi: "region": "north", "activeNode": "northPrimary"
+
+###
+
+### ─── TC-02: Định tuyến theo tọa độ → TP.HCM → SOUTH ──────────
+
+POST {{baseUrl}}/trips/book
+Authorization: {{token}}
 Content-Type: application/json
 
 {
-  "latitude": 10.77
+  "pickup_lat": 10.7769,
+  "pickup_lng": 106.7009,
+  "dropoff_lat": 10.7326,
+  "dropoff_lng": 106.7228,
+  "pickup": "Quận 1, TP.HCM",
+  "dropoff": "Quận 7, TP.HCM",
+  "fare": 65000
 }
 
-### Low-level DB routing test (WRITE)
-POST http://localhost:3000/test-db/write
+### Kết quả mong đợi: "region": "south", "activeNode": "southPrimary"
+
+###
+
+### ─── TC-03: Replication — kiểm tra pg_stat_replication ────────
+
+GET {{baseUrl}}/health
+### Kết quả mong đợi: replication.north.connected = true, replication.south.connected = true
+
+###
+
+### ─── TC-04: Failover tự động (chạy sau: docker stop pg-south-primary) ──
+
+GET {{baseUrl}}/health/south
+### Kết quả mong đợi: serviceLevel.south = "readonly", southPrimary.status = "offline"
+
+###
+
+### ─── TC-05: Read-only mode — thử đặt chuyến khi primary down ──
+### (Chạy sau khi đã docker stop pg-south-primary)
+
+POST {{baseUrl}}/trips/book
+Authorization: {{token}}
 Content-Type: application/json
 
 {
-  "latitude": 10.77
+  "pickup_lat": 10.7769,
+  "pickup_lng": 106.7009,
+  "dropoff_lat": 10.7326,
+  "dropoff_lng": 106.7228,
+  "pickup": "Quận 1, TP.HCM",
+  "dropoff": "Quận 7, TP.HCM",
+  "fare": 65000
 }
+
+### Kết quả mong đợi: HTTP 503, readOnly=true, warning message rõ ràng
+
+###
+
+### ─── TC-06: Xem lịch sử khi failover ──────────────────────────
+### (Chạy sau khi đã docker stop pg-south-primary)
+
+GET {{baseUrl}}/trips/history
+Authorization: {{token}}
+
+### Kết quả mong đợi: HTTP 200, readOnly=true, data vẫn có (từ replica)
+
+###
+
+### ─── TC-07: Cross-region isolation ────────────────────────────
+### (Chạy sau: docker stop pg-south-primary pg-south-replica)
+
+GET {{baseUrl}}/health/north
+### Kết quả mong đợi: serviceLevel.north = "full" (không bị ảnh hưởng)
+
+###
+
+GET {{baseUrl}}/health/south
+### Kết quả mong đợi: serviceLevel.south = "unavailable"
+
+###
+
+### ─── TC-08: Cả 2 node cùng down ───────────────────────────────
+### (Chạy sau: docker stop pg-south-primary pg-south-replica)
+
+GET {{baseUrl}}/trips/history
+Authorization: {{token}}
+
+### Kết quả mong đợi: HTTP 503, warning = "No healthy database available for SOUTH region."
+
+###
+
+### ─── TC-09: Phục hồi tự động ──────────────────────────────────
+### (Chạy sau: docker start pg-south-primary, chờ 10 giây)
+
+GET {{baseUrl}}/health/south
+### Kết quả mong đợi: serviceLevel.south = "full", southPrimary.status = "online"
+
+###
+
+POST {{baseUrl}}/trips/book
+Authorization: {{token}}
+Content-Type: application/json
+
+{
+  "pickup_lat": 10.7769,
+  "pickup_lng": 106.7009,
+  "dropoff_lat": 10.7326,
+  "dropoff_lng": 106.7228,
+  "pickup": "Quận 1, TP.HCM",
+  "dropoff": "Quận 7, TP.HCM",
+  "fare": 65000
+}
+
+### Kết quả mong đợi: HTTP 201, đặt chuyến thành công lại
+
+###
+
+### ─── TC-10: Health API real-time ──────────────────────────────
+
+GET {{baseUrl}}/health
+### Kết quả mong đợi: 4 node status đúng, lastCheckedAt cập nhật mỗi 5 giây
+
+###
+
+GET {{baseUrl}}/health/history
+### Kết quả mong đợi: timeline ghi lại các sự kiện failover
+
+###
+
+### ─── BONUS: Estimate trip (không cần auth) ─────────────────────
+
+POST {{baseUrl}}/trips/estimate
+Content-Type: application/json
+
+{
+  "pickup_lat": 21.0285,
+  "pickup_lng": 105.8542,
+  "dropoff_lat": 21.0358,
+  "dropoff_lng": 105.7828
+}
+
+###
+
+### ─── BONUS: Tìm tài xế gần nhất ───────────────────────────────
+
+GET {{baseUrl}}/drivers/nearby?lat=21.0285&lng=105.8542&radius_km=5&vehicle_type=bike
+
+###
 
