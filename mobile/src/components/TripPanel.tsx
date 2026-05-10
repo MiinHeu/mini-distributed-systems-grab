@@ -1,42 +1,20 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, ActivityIndicator } from 'react-native';
 import { Point, SelectMode } from '../types/trip';
+import { Colors, Spacing, Radius, Shadow } from '../theme';
 
 type Props = {
-  mode: SelectMode;
-  pickup: Point | null;
-  pickupAddress: string;
-  dropoff: Point | null;
-  dropoffAddress: string;
-  distanceKm: number | null;
-  duration: number | null;
-  fare: number | null;
+  mode: SelectMode; pickup: Point | null; pickupAddress: string;
+  dropoff: Point | null; dropoffAddress: string;
+  distanceKm: number | null; duration: number | null; fare: number | null;
   loadingLocation: boolean;
-  onUseCurrentLocation: () => void;
-  onCenterToCurrentLocation: () => void;
+  onUseCurrentLocation: () => void; onCenterToCurrentLocation: () => void;
   onChangeMode: (mode: SelectMode) => void;
-  onBook: () => void;
-  onClear: () => void;
-  onSearchAddress: (address: string) => void;
+  onBook: () => void; onClear: () => void; onSearchAddress: (address: string) => void;
+  bookDisabled?: boolean; bookDisabledReason?: string;
 };
 
-export default function TripPanel({
-  mode,
-  pickup,
-  pickupAddress,
-  dropoff,
-  dropoffAddress,
-  distanceKm,
-  duration,
-  fare,
-  loadingLocation,
-  onUseCurrentLocation,
-  onCenterToCurrentLocation,
-  onChangeMode,
-  onBook,
-  onClear,
-  onSearchAddress,
-}: Props) {
+export default function TripPanel({ mode, pickup, pickupAddress, dropoff, dropoffAddress, distanceKm, duration, fare, loadingLocation, onUseCurrentLocation, onCenterToCurrentLocation, onChangeMode, onBook, onClear, onSearchAddress, bookDisabled = false, bookDisabledReason }: Props) {
   const [searchText, setSearchText] = useState('');
   const [isSearching, setIsSearching] = useState(false);
 
@@ -46,323 +24,133 @@ export default function TripPanel({
     await onSearchAddress(searchText);
     setIsSearching(false);
   };
-  const formatPoint = (point: Point | null) => {
-    if (!point) return 'Chưa chọn';
-    return `${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}`;
-  };
 
   return (
-    <View style={styles.bottomCard}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <Text style={styles.appTitle}>Ứng dụng đặt chuyến</Text>
-        <Text style={styles.appSubtitle}>
-          Chạm bản đồ hoặc nhập địa chỉ bên dưới
-        </Text>
-
-        <View style={styles.searchRow}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder={mode === 'pickup' ? 'Nhập địa chỉ đón...' : 'Nhập địa chỉ trả...'}
-            value={searchText}
-            onChangeText={setSearchText}
-          />
-          <Pressable style={styles.searchBtn} onPress={handleSearch} disabled={isSearching}>
-            {isSearching ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.searchBtnText}>Tìm</Text>
-            )}
+    <View style={S.panel}>
+      <View style={S.handle} />
+      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {/* Search bar */}
+        <View style={S.searchRow}>
+          <View style={S.searchInputWrap}>
+            <Text style={S.searchIcon}>[s]</Text>
+            <TextInput style={S.searchInput} placeholder={mode === 'pickup' ? 'Nhap dia chi don...' : 'Nhap dia chi tra...'} value={searchText} onChangeText={setSearchText} onSubmitEditing={handleSearch} returnKeyType="search" placeholderTextColor={Colors.gray400} />
+          </View>
+          <Pressable style={S.searchBtn} onPress={handleSearch} disabled={isSearching}>
+            {isSearching ? <ActivityIndicator size="small" color={Colors.white} /> : <Text style={S.searchBtnText}>Tim</Text>}
           </Pressable>
         </View>
 
-        <View style={styles.quickActionRow}>
-          <Pressable
-            style={styles.quickActionButton}
-            onPress={onUseCurrentLocation}
-          >
-            <Text style={styles.quickActionText}>
-              {loadingLocation ? 'Đang lấy vị trí...' : 'Dùng vị trí hiện tại'}
-            </Text>
+        {/* Quick actions */}
+        <View style={S.quickRow}>
+          <Pressable style={S.quickBtn} onPress={onUseCurrentLocation}>
+            <Text style={S.quickBtnText}>{loadingLocation ? 'Dang lay...' : '[gps] Vi tri hien tai'}</Text>
           </Pressable>
-
-          <Pressable
-            style={styles.quickActionOutlineButton}
-            onPress={onCenterToCurrentLocation}
-          >
-            <Text style={styles.quickActionOutlineText}>Về vị trí tôi</Text>
+          <Pressable style={S.quickBtnOutline} onPress={onCenterToCurrentLocation}>
+            <Text style={S.quickBtnOutlineText}>[map] Ve vi tri toi</Text>
           </Pressable>
         </View>
 
-        <View style={styles.toggleRow}>
-          <Pressable
-            style={[
-              styles.toggleButton,
-              mode === 'pickup' && styles.toggleButtonActive,
-            ]}
-            onPress={() => onChangeMode('pickup')}
-          >
-            <Text
-              style={[
-                styles.toggleButtonText,
-                mode === 'pickup' && styles.toggleButtonTextActive,
-              ]}
-            >
-              Điểm đón
-            </Text>
+        {/* Mode toggle */}
+        <View style={S.modeToggle}>
+          <Pressable style={[S.modeBtn, mode === 'pickup' && S.modeBtnActive]} onPress={() => onChangeMode('pickup')}>
+            <View style={[S.modeDot, { backgroundColor: mode === 'pickup' ? Colors.white : Colors.primary }]} />
+            <Text style={[S.modeBtnText, mode === 'pickup' && S.modeBtnTextActive]}>Diem don</Text>
           </Pressable>
-
-          <Pressable
-            style={[
-              styles.toggleButton,
-              mode === 'dropoff' && styles.toggleButtonActive,
-            ]}
-            onPress={() => onChangeMode('dropoff')}
-          >
-            <Text
-              style={[
-                styles.toggleButtonText,
-                mode === 'dropoff' && styles.toggleButtonTextActive,
-              ]}
-            >
-              Điểm trả
-            </Text>
+          <Pressable style={[S.modeBtn, mode === 'dropoff' && S.modeBtnActive]} onPress={() => onChangeMode('dropoff')}>
+            <View style={[S.modeDot, { backgroundColor: mode === 'dropoff' ? Colors.white : Colors.danger }]} />
+            <Text style={[S.modeBtnText, mode === 'dropoff' && S.modeBtnTextActive]}>Diem tra</Text>
           </Pressable>
         </View>
 
-        <View style={styles.locationCard}>
-          <View style={styles.locationHeaderRow}>
-            <View style={[styles.dot, { backgroundColor: '#16a34a' }]} />
-            <Text style={styles.locationLabel}>Điểm đón</Text>
+        {/* Route display */}
+        <View style={S.routeCard}>
+          <View style={S.routeRow}>
+            <View style={S.routeDotGreen} />
+            <View style={S.routeInfo}>
+              <Text style={S.routeLabel}>Diem don</Text>
+              <Text style={S.routeAddr} numberOfLines={2}>{pickupAddress}</Text>
+            </View>
           </View>
-          <Text style={styles.locationValue}>{pickupAddress}</Text>
-        </View>
-
-        <View style={styles.locationCard}>
-          <View style={styles.locationHeaderRow}>
-            <View style={[styles.dot, { backgroundColor: '#dc2626' }]} />
-            <Text style={styles.locationLabel}>Điểm trả</Text>
-          </View>
-          <Text style={styles.locationValue}>{dropoffAddress}</Text>
-        </View>
-
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statTitle}>Khoảng cách</Text>
-            <Text style={styles.statValue}>
-              {distanceKm !== null ? `${distanceKm.toFixed(2)} km` : '--'}
-            </Text>
-          </View>
-
-          <View style={styles.statBox}>
-            <Text style={styles.statTitle}>Thời gian</Text>
-            <Text style={styles.statValue}>
-              {duration !== null ? `${duration.toFixed(1)} phút` : '--'}
-            </Text>
-          </View>
-
-          <View style={styles.statBox}>
-            <Text style={styles.statTitle}>Giá tiền</Text>
-            <Text style={styles.statValue}>
-              {fare !== null ? `${fare.toLocaleString()}đ` : '--'}
-            </Text>
+          <View style={S.routeDivider}><View style={S.routeDividerLine} /></View>
+          <View style={S.routeRow}>
+            <View style={S.routeDotRed} />
+            <View style={S.routeInfo}>
+              <Text style={S.routeLabel}>Diem tra</Text>
+              <Text style={S.routeAddr} numberOfLines={2}>{dropoffAddress}</Text>
+            </View>
           </View>
         </View>
 
-        <Pressable style={styles.bookButton} onPress={onBook}>
-          <Text style={styles.bookButtonText}>Đặt chuyến ngay</Text>
+        {/* Stats */}
+        {(distanceKm !== null || duration !== null || fare !== null) && (
+          <View style={S.statsRow}>
+            <View style={S.statBox}>
+              <Text style={S.statLabel}>Khoang cach</Text>
+              <Text style={S.statValue}>{distanceKm !== null ? `${distanceKm.toFixed(1)} km` : '--'}</Text>
+            </View>
+            <View style={S.statDivider} />
+            <View style={S.statBox}>
+              <Text style={S.statLabel}>Thoi gian</Text>
+              <Text style={S.statValue}>{duration !== null ? `${Math.round(duration)} ph` : '--'}</Text>
+            </View>
+            <View style={S.statDivider} />
+            <View style={[S.statBox, { flex: 1.4 }]}>
+              <Text style={S.statLabel}>Gia uoc tinh</Text>
+              <Text style={[S.statValue, { color: Colors.primary, fontSize: 18 }]}>{fare !== null ? `${fare.toLocaleString()}d` : '--'}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Book button */}
+        <Pressable style={[S.bookBtn, bookDisabled && S.bookBtnDisabled]} onPress={onBook} disabled={bookDisabled}>
+          <Text style={S.bookBtnText}>{bookDisabled && bookDisabledReason ? `[khoa] ${bookDisabledReason}` : 'DAT CHUYEN NGAY'}</Text>
         </Pressable>
 
-        <Pressable style={styles.clearButton} onPress={onClear}>
-          <Text style={styles.clearButtonText}>Xóa lựa chọn</Text>
+        <Pressable style={S.clearBtn} onPress={onClear}>
+          <Text style={S.clearBtnText}>Xoa lua chon</Text>
         </Pressable>
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  bottomCard: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    marginTop: -18,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  appTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#111827',
-  },
-  appSubtitle: {
-    marginTop: 6,
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 16,
-  },
-  quickActionRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
-  },
-  quickActionButton: {
-    flex: 1,
-    backgroundColor: '#dbeafe',
-    paddingVertical: 12,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  quickActionText: {
-    color: '#1d4ed8',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  quickActionOutlineButton: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    paddingVertical: 12,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  quickActionOutlineText: {
-    color: '#334155',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  searchRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
-  },
-  searchInput: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  searchBtn: {
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  searchBtnText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    backgroundColor: '#eef2ff',
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 16,
-  },
-  toggleButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  toggleButtonActive: {
-    backgroundColor: '#2563eb',
-  },
-  toggleButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#374151',
-  },
-  toggleButtonTextActive: {
-    color: '#ffffff',
-  },
-  locationCard: {
-    backgroundColor: '#f9fafb',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-  },
-  locationHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-    marginRight: 8,
-  },
-  locationLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#374151',
-  },
-  locationValue: {
-    fontSize: 14,
-    color: '#111827',
-    lineHeight: 20,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-    marginBottom: 18,
-  },
-  statBox: {
-    flex: 1,
-    backgroundColor: '#eff6ff',
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-  },
-  statTitle: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginBottom: 6,
-    fontWeight: '600',
-  },
-  statValue: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#1d4ed8',
-    textAlign: 'center',
-  },
-  bookButton: {
-    backgroundColor: '#16a34a',
-    paddingVertical: 15,
-    borderRadius: 16,
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  bookButtonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '800',
-  },
-  clearButton: {
-    backgroundColor: '#fee2e2',
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  clearButtonText: {
-    color: '#dc2626',
-    fontSize: 15,
-    fontWeight: '800',
-  },
+const S = StyleSheet.create({
+  panel: { flex: 1, backgroundColor: Colors.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: Spacing.base, paddingTop: 10, paddingBottom: 12, ...Shadow.lg },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.gray200, alignSelf: 'center', marginBottom: 14 },
+  searchRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  searchInputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.gray50, borderRadius: Radius.md, borderWidth: 1.5, borderColor: Colors.gray200, paddingHorizontal: 12 },
+  searchIcon: { fontSize: 16, marginRight: 6 },
+  searchInput: { flex: 1, paddingVertical: 11, fontSize: 14, color: Colors.gray900 },
+  searchBtn: { backgroundColor: Colors.accent, paddingHorizontal: 16, borderRadius: Radius.md, justifyContent: 'center', alignItems: 'center', minWidth: 60 },
+  searchBtnText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
+  quickRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  quickBtn: { flex: 1, backgroundColor: Colors.primaryLight, paddingVertical: 11, borderRadius: Radius.md, alignItems: 'center' },
+  quickBtnText: { color: Colors.primaryDark, fontWeight: '700', fontSize: 13 },
+  quickBtnOutline: { flex: 1, backgroundColor: Colors.white, borderWidth: 1.5, borderColor: Colors.gray200, paddingVertical: 11, borderRadius: Radius.md, alignItems: 'center' },
+  quickBtnOutlineText: { color: Colors.gray700, fontWeight: '700', fontSize: 13 },
+  modeToggle: { flexDirection: 'row', backgroundColor: Colors.gray100, borderRadius: Radius.lg, padding: 4, marginBottom: 12 },
+  modeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: Radius.md },
+  modeBtnActive: { backgroundColor: Colors.primary, ...Shadow.sm },
+  modeDot: { width: 8, height: 8, borderRadius: 4 },
+  modeBtnText: { fontSize: 14, fontWeight: '700', color: Colors.gray600 },
+  modeBtnTextActive: { color: Colors.white },
+  routeCard: { backgroundColor: Colors.gray50, borderRadius: Radius.lg, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: Colors.gray200 },
+  routeRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  routeDotGreen: { width: 12, height: 12, borderRadius: 6, backgroundColor: Colors.primary, marginTop: 4, borderWidth: 2, borderColor: Colors.primaryLight },
+  routeDotRed: { width: 12, height: 12, borderRadius: 6, backgroundColor: Colors.danger, marginTop: 4, borderWidth: 2, borderColor: Colors.dangerLight },
+  routeInfo: { flex: 1 },
+  routeLabel: { fontSize: 11, fontWeight: '700', color: Colors.gray400, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
+  routeAddr: { fontSize: 14, color: Colors.gray900, fontWeight: '500', lineHeight: 20 },
+  routeDivider: { paddingLeft: 5, paddingVertical: 4 },
+  routeDividerLine: { width: 2, height: 16, backgroundColor: Colors.gray300, marginLeft: 1 },
+  statsRow: { flexDirection: 'row', backgroundColor: Colors.gray50, borderRadius: Radius.lg, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: Colors.gray200 },
+  statBox: { flex: 1, alignItems: 'center' },
+  statDivider: { width: 1, backgroundColor: Colors.gray200, marginVertical: 4 },
+  statLabel: { fontSize: 11, color: Colors.gray400, fontWeight: '600', marginBottom: 4 },
+  statValue: { fontSize: 16, fontWeight: '800', color: Colors.gray900 },
+  bookBtn: { backgroundColor: Colors.primary, paddingVertical: 16, borderRadius: Radius.xl, alignItems: 'center', marginBottom: 10, ...Shadow.primary },
+  bookBtnDisabled: { backgroundColor: Colors.gray300, shadowOpacity: 0 },
+  bookBtnText: { color: Colors.white, fontSize: 16, fontWeight: '900', letterSpacing: 0.5 },
+  clearBtn: { backgroundColor: Colors.dangerLight, paddingVertical: 13, borderRadius: Radius.xl, alignItems: 'center' },
+  clearBtnText: { color: Colors.danger, fontSize: 14, fontWeight: '700' },
 });
