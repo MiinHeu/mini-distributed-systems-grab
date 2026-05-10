@@ -1,5 +1,7 @@
 services:
 
+  # ─── MIỀN BẮC ────────────────────────────────────────────────────────────────
+
   pg-north-primary:
     image: postgres:15
     container_name: pg-north-primary
@@ -19,6 +21,14 @@ services:
       -c max_wal_senders=10
       -c wal_keep_size=128MB
       -c hot_standby=on
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-minigrab}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - db_network
 
   pg-north-replica:
     image: postgres:15
@@ -30,7 +40,8 @@ services:
     ports:
       - "5433:5432"
     depends_on:
-      - pg-north-primary
+      pg-north-primary:
+        condition: service_healthy
     volumes:
       - north_replica_data:/var/lib/postgresql/data
     command: >
@@ -38,12 +49,22 @@ services:
       rm -rf /var/lib/postgresql/data/*;
       until pg_basebackup -h pg-north-primary -D /var/lib/postgresql/data -U replicator -Fp -Xs -P -R;
       do
-        echo 'Waiting for north primary...';
-        sleep 2;
+        echo 'Waiting for north primary to be ready...';
+        sleep 3;
       done;
       chmod 700 /var/lib/postgresql/data;
       exec postgres
       "
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-minigrab}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - db_network
+
+  # ─── MIỀN NAM ────────────────────────────────────────────────────────────────
 
   pg-south-primary:
     image: postgres:15
@@ -64,6 +85,14 @@ services:
       -c max_wal_senders=10
       -c wal_keep_size=128MB
       -c hot_standby=on
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-minigrab}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - db_network
 
   pg-south-replica:
     image: postgres:15
@@ -75,7 +104,8 @@ services:
     ports:
       - "5435:5432"
     depends_on:
-      - pg-south-primary
+      pg-south-primary:
+        condition: service_healthy
     volumes:
       - south_replica_data:/var/lib/postgresql/data
     command: >
@@ -83,12 +113,22 @@ services:
       rm -rf /var/lib/postgresql/data/*;
       until pg_basebackup -h pg-south-primary -D /var/lib/postgresql/data -U replicator -Fp -Xs -P -R;
       do
-        echo 'Waiting for south primary...';
-        sleep 2;
+        echo 'Waiting for south primary to be ready...';
+        sleep 3;
       done;
       chmod 700 /var/lib/postgresql/data;
       exec postgres
       "
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-minigrab}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - db_network
+
+  # ─── MONITORING ──────────────────────────────────────────────────────────────
 
   postgres-exporter-north-primary:
     image: quay.io/prometheuscommunity/postgres-exporter
@@ -99,7 +139,10 @@ services:
     ports:
       - "9187:9187"
     depends_on:
-      - pg-north-primary
+      pg-north-primary:
+        condition: service_healthy
+    networks:
+      - db_network
 
   postgres-exporter-north-replica:
     image: quay.io/prometheuscommunity/postgres-exporter
@@ -110,7 +153,10 @@ services:
     ports:
       - "9188:9187"
     depends_on:
-      - pg-north-replica
+      pg-north-replica:
+        condition: service_healthy
+    networks:
+      - db_network
 
   postgres-exporter-south-primary:
     image: quay.io/prometheuscommunity/postgres-exporter
@@ -121,7 +167,10 @@ services:
     ports:
       - "9189:9187"
     depends_on:
-      - pg-south-primary
+      pg-south-primary:
+        condition: service_healthy
+    networks:
+      - db_network
 
   postgres-exporter-south-replica:
     image: quay.io/prometheuscommunity/postgres-exporter
@@ -132,7 +181,10 @@ services:
     ports:
       - "9190:9187"
     depends_on:
-      - pg-south-replica
+      pg-south-replica:
+        condition: service_healthy
+    networks:
+      - db_network
 
   prometheus:
     image: prom/prometheus
@@ -147,6 +199,8 @@ services:
       - postgres-exporter-north-replica
       - postgres-exporter-south-primary
       - postgres-exporter-south-replica
+    networks:
+      - db_network
 
   grafana:
     image: grafana/grafana
@@ -156,9 +210,20 @@ services:
       - "3001:3000"
     depends_on:
       - prometheus
+    networks:
+      - db_network
+
+# ─── VOLUMES ─────────────────────────────────────────────────────────────────
 
 volumes:
   north_primary_data:
   north_replica_data:
   south_primary_data:
   south_replica_data:
+
+# ─── NETWORKS ────────────────────────────────────────────────────────────────
+
+networks:
+  db_network:
+    name: minigrab_db_network
+    driver: bridge
