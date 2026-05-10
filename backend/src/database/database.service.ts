@@ -3,6 +3,7 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { Pool, QueryResult, QueryResultRow } from 'pg';
 import { Region } from '../common/location.utils';
@@ -16,18 +17,23 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   southPrimary: Pool;
   southReplica: Pool;
 
-  // Connection pools quản lý 4 nodes cho Failover (Driver Module)
   private pools: Record<Region, { primary: Pool; replica: Pool }>;
 
   constructor() {
+    const user = process.env.POSTGRES_USER || 'postgres';
+    const password = process.env.POSTGRES_PASSWORD || 'postgres';
+    const database = process.env.POSTGRES_DB || 'minigrab';
+
     const poolDefaults = {
-      user: process.env.POSTGRES_USER || 'postgres',
-      password: process.env.POSTGRES_PASSWORD || 'postgres',
-      database: process.env.POSTGRES_DB || 'minigrab',
-      connectionTimeoutMillis: 3000, // Fail fast khi node down
+      user,
+      password,
+      database,
+      connectionTimeoutMillis: 3000,
       idleTimeoutMillis: 30000,
-      max: 5,
+      max: 10,
     };
+
+    this.logger.log(`[DB Init] Khởi tạo các kết nối tới Database với user: ${user}`);
 
     this.northPrimary = new Pool({
       ...poolDefaults,
@@ -53,40 +59,14 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       port: Number(process.env.DB_SOUTH_REPLICA_PORT || 5435),
     });
 
-    // ▶ Quan trọng: Bắt lỗi "error" trên mỗi pool để TRÁNH crash process
-    // Khi 1 node bị dừng đột ngột, idle connections bắn error event.
-    // Nếu không có handler, Node.js coi đây là unhandled error → crash toàn bộ backend.
-    this.northPrimary.on('error', (err) => {
-      this.logger.warn(
-        `[Pool Error] North Primary idle client error: ${err.message}`,
-      );
-    });
-    this.northReplica.on('error', (err) => {
-      this.logger.warn(
-        `[Pool Error] North Replica idle client error: ${err.message}`,
-      );
-    });
-    this.southPrimary.on('error', (err) => {
-      this.logger.warn(
-        `[Pool Error] South Primary idle client error: ${err.message}`,
-      );
-    });
-    this.southReplica.on('error', (err) => {
-      this.logger.warn(
-        `[Pool Error] South Replica idle client error: ${err.message}`,
-      );
-    });
+    this.northPrimary.on('error', (err) => this.logger.error(`[NORTH_PRIMARY] Error: ${err.message}`));
+    this.northReplica.on('error', (err) => this.logger.error(`[NORTH_REPLICA] Error: ${err.message}`));
+    this.southPrimary.on('error', (err) => this.logger.error(`[SOUTH_PRIMARY] Error: ${err.message}`));
+    this.southReplica.on('error', (err) => this.logger.error(`[SOUTH_REPLICA] Error: ${err.message}`));
 
-    // Tích hợp hệ thống Pool Failover của Người 4 dựa trên kết nối của Người 1
     this.pools = {
-      [Region.NORTH]: {
-        primary: this.northPrimary,
-        replica: this.northReplica,
-      },
-      [Region.SOUTH]: {
-        primary: this.southPrimary,
-        replica: this.southReplica,
-      },
+      [Region.NORTH]: { primary: this.northPrimary, replica: this.northReplica },
+      [Region.SOUTH]: { primary: this.southPrimary, replica: this.southReplica },
     };
   }
 
@@ -97,35 +77,40 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     isWriteRequest = false,
   ): Promise<{ result: QueryResult<T>; isReadOnly: boolean }> {
     const regionPools = this.pools[region];
+    const regionName = region === Region.NORTH ? 'Miền Bắc' : 'Miền Nam';
+
     try {
       const result = await regionPools.primary.query<T>(queryText, values);
       return { result, isReadOnly: false };
-    } catch (error: unknown) {
-      const errMsg = error instanceof Error ? error.message : String(error);
+    } catch (error: any) {
+      const errMsg = error?.message || String(error);
+      this.logger.warn(`[${region} Primary Down] Lỗi: ${errMsg}`);
+
       if (isWriteRequest) {
-        this.logger.error(`[${region} Primary Down] GHI LỖI: ${errMsg}`);
-        throw new Error(`DATABASE_PRIMARY_DOWN_${region}`);
+        throw new ServiceUnavailableException({
+          readOnly: true,
+          warning: `Hệ thống ${regionName} đang bảo trì (Primary DOWN). Chi tiết: ${errMsg}`,
+          data: null,
+        });
       }
-      this.logger.warn(
-        `[${region} Primary Down] Chuyển Read-Only: ${errMsg}`,
-      );
+
       try {
         const result = await regionPools.replica.query<T>(queryText, values);
         return { result, isReadOnly: true };
-      } catch (replicaError: unknown) {
-        const repErrMsg = replicaError instanceof Error ? replicaError.message : String(replicaError);
-        this.logger.error(
-          `[${region} Replica Down] Toàn cụm sập: ${repErrMsg}`,
-        );
-        throw new Error(`DATABASE_CLUSTER_DOWN_${region}`);
+      } catch (replicaError: any) {
+        const repErrMsg = replicaError?.message || String(replicaError);
+        this.logger.error(`[${region} Replica Down] Toàn cụm sập: ${repErrMsg}`);
+        throw new ServiceUnavailableException({
+          readOnly: true,
+          warning: `Toàn bộ cụm CSDL ${regionName} đang ngoại tuyến. Lỗi: ${repErrMsg}`,
+          data: null,
+        });
       }
     }
   }
 
   onModuleInit() {
-    this.logger.log(
-      'Đã khởi tạo Database pools cho 4 nodes (Sẵn sàng Failover).',
-    );
+    this.logger.log('🚀 Hệ thống Database đa vùng đã sẵn sàng.');
   }
 
   async onModuleDestroy() {
