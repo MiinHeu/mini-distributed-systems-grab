@@ -92,6 +92,19 @@ export class TripsController {
     return this.tripsService.getTripById(Number(id));
   }
 
+  /**
+   * GET /trips/:id — Chi tiết 1 chuyến (có auth)
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get(':id')
+  async getTripDetail(@Param('id', ParseIntPipe) id: number) {
+    const trip = await this.tripsService.getTripById(id);
+    if (!trip) {
+      throw new BadRequestException('Không tìm thấy chuyến xe');
+    }
+    return { trip };
+  }
+
   @UseGuards(JwtAuthGuard)
   @Patch(':id/accept')
   async acceptTrip(@Param('id', ParseIntPipe) id: number, @Req() req) {
@@ -131,6 +144,24 @@ export class TripsController {
   @Patch(':id/cancel-legacy')
   cancelTripLegacy(@Param('id') id: string) {
     return this.tripsService.cancelTrip(Number(id));
+  }
+
+  /**
+   * PATCH /trips/:id/cancel — Hủy chuyến (có auth, dùng raw pg + region routing)
+   * Chỉ customer sở hữu chuyến mới được hủy, và chỉ khi status là pending/accepted
+   */
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id/cancel')
+  async cancelTrip(@Param('id', ParseIntPipe) id: number, @Req() req) {
+    const userId = req.user.userId || req.user.id;
+    const trip = await this.tripsService.cancelTrip(id, userId);
+    this.tripsGateway.emitTripStatus({
+      tripId: id,
+      status: 'cancelled',
+      trip: trip as any,
+      message: 'Trip cancelled by customer',
+    });
+    return { trip };
   }
 
   @UseGuards(JwtAuthGuard)
