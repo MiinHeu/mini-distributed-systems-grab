@@ -1,5 +1,5 @@
-import { Point } from '../types/trip';
 import { API_BASE_URL } from '../config';
+import { Point } from '../types/trip';
 
 type EstimateResponse = {
   route?: {

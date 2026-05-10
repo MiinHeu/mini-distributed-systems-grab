@@ -1,4 +1,6 @@
-import 'dotenv/config'; // Nạp biến môi trường ngay lập tức ở dòng đầu tiên
+import * as dotenv from 'dotenv';
+import { join } from 'path';
+dotenv.config({ path: join(process.cwd(), '.env') });
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';

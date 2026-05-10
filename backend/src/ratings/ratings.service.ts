@@ -3,81 +3,105 @@ import {
   BadRequestException,
   ConflictException,
 } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DatabaseService } from '../database/database.service';
+import { Region } from '../common/location.utils';
 
 @Injectable()
 export class RatingsService {
-  constructor(
-    @InjectDataSource() private primaryDS: DataSource,
-  ) {}
+  constructor(private readonly db: DatabaseService) {}
 
   async createRating(body: any, customerId: number) {
     const { trip_id, score, comment } = body;
 
-    // Validate score 1-5
     if (!score || score < 1 || score > 5) {
       throw new BadRequestException('Score phải từ 1 đến 5');
     }
 
-    // Kiểm tra chuyến đã completed chưa
-    const trip = await this.primaryDS.query(
-      `SELECT * FROM trips WHERE id = $1`,
-      [trip_id],
-    );
+    // Tìm trip ở cả 2 region
+    let trip: any = null;
+    let tripRegion: Region = Region.SOUTH;
+    for (const region of [Region.SOUTH, Region.NORTH]) {
+      try {
+        const { result } = await this.db.queryWithFailover(
+          region,
+          `SELECT * FROM trips WHERE id = $1`,
+          [trip_id],
+          false,
+        );
+        if (result.rows.length > 0) {
+          trip = result.rows[0];
+          tripRegion = region;
+          break;
+        }
+      } catch { /* thử region kia */ }
+    }
 
-    if (!trip.length) {
+    if (!trip) {
       throw new BadRequestException('Chuyến đi không tồn tại');
     }
 
-    if (trip[0].status !== 'completed') {
+    if (trip.status !== 'completed') {
       throw new BadRequestException('Chỉ có thể đánh giá chuyến đã hoàn thành');
     }
 
     // Kiểm tra đã đánh giá chưa
-    const existing = await this.primaryDS.query(
-      `SELECT * FROM ratings WHERE trip_id = $1 AND customer_id = $2`,
+    const { result: existingResult } = await this.db.queryWithFailover(
+      tripRegion,
+      `SELECT id FROM ratings WHERE trip_id = $1 AND customer_id = $2`,
       [trip_id, customerId],
+      false,
     );
 
-    if (existing.length) {
+    if (existingResult.rows.length > 0) {
       throw new ConflictException('Chuyến đi này đã được đánh giá');
     }
 
     // Tạo rating
-    const result = await this.primaryDS.query(
+    const { result } = await this.db.queryWithFailover(
+      tripRegion,
       `INSERT INTO ratings (trip_id, customer_id, driver_id, score, comment)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [trip_id, customerId, trip[0].driver_id, score, comment || null],
+      [trip_id, customerId, trip.driver_id, score, comment || null],
+      true,
     );
 
     return {
       message: 'Đánh giá thành công',
-      rating: result[0],
+      rating: result.rows[0],
     };
   }
 
   async getDriverRatings(driverId: number) {
-    const ratings = await this.primaryDS.query(
-      `SELECT r.*, u.name AS customer_name
-       FROM ratings r
-       JOIN users u ON r.customer_id = u.id
-       WHERE r.driver_id = $1
-       ORDER BY r.created_at DESC`,
-      [driverId],
-    );
+    // Query cả 2 region, gộp kết quả
+    const allRatings: any[] = [];
+    for (const region of [Region.NORTH, Region.SOUTH]) {
+      try {
+        const { result } = await this.db.queryWithFailover(
+          region,
+          `SELECT r.*, u.name AS customer_name
+           FROM ratings r
+           JOIN users u ON r.customer_id = u.id
+           WHERE r.driver_id = $1
+           ORDER BY r.created_at DESC`,
+          [driverId],
+          false,
+        );
+        allRatings.push(...result.rows);
+      } catch {
+        // node down, bỏ qua
+      }
+    }
 
-    // Tính điểm trung bình
-    const avg = ratings.length
-      ? ratings.reduce((sum: number, r: any) => sum + r.score, 0) / ratings.length
+    const avg = allRatings.length
+      ? allRatings.reduce((sum, r) => sum + Number(r.score), 0) / allRatings.length
       : 0;
 
     return {
       driver_id: driverId,
       average_score: Math.round(avg * 10) / 10,
-      total_ratings: ratings.length,
-      ratings,
+      total_ratings: allRatings.length,
+      ratings: allRatings,
     };
   }
 }

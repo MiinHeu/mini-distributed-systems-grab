@@ -10,7 +10,6 @@ import { TestDbController } from './test-db/test-db.controller';
 import { ReportsController } from './reports/reports.controller';
 import { AuthModule } from './auth/auth.module';
 import { DriversModule } from './drivers/drivers.module';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { TripsModule } from './trips/trips.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -26,30 +25,6 @@ import { PaymentsModule } from './payments/payments.module';
     AuthModule,
     DriversModule,
     MessagesModule,
-    // South PRIMARY
-    TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: process.env.DB_SOUTH_PRIMARY_HOST,
-      port: +(process.env.DB_SOUTH_PRIMARY_PORT ?? '5434'),
-      username: process.env.POSTGRES_USER,
-      password: process.env.POSTGRES_PASSWORD,
-      database: process.env.POSTGRES_DB,
-      synchronize: false,
-      connectTimeoutMS: 3000,
-      entities: [__dirname + '/**/*.entity{.ts,.js}'],
-    }),
-    // South REPLICA
-    TypeOrmModule.forRoot({
-      name: 'replica',
-      type: 'postgres',
-      host: process.env.DB_SOUTH_REPLICA_HOST,
-      port: +(process.env.DB_SOUTH_REPLICA_PORT ?? '5435'),
-      username: process.env.POSTGRES_USER,
-      password: process.env.POSTGRES_PASSWORD,
-      database: process.env.POSTGRES_DB,
-      synchronize: false,
-      entities: [__dirname + '/**/*.entity{.ts,.js}'],
-    }),
     TripsModule,
     AdminModule,
     DbRoutingModule,
