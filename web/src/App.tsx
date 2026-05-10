@@ -9,46 +9,8 @@ import AdminPayments from './AdminPayments'
 import './App.css'
 
 type PreferredLanguage = 'vi' | 'en'
-
-type User = {
-  id: number
-  name: string
-  phone: string
-  email: string
-  role: 'customer' | 'driver' | 'admin'
-  avatar_url: string | null
-  preferred_language: PreferredLanguage
-  created_at: string
-  updated_at: string
-}
-
-type ApiEnvelope<T> = {
-  data: T
-}
-
-type LoginResponse = {
-  token: string
-  user: User
-  message: string
-}
-
-type RegisterResponse = {
-  user: User
-  message: string
-}
-
-type ProfileResponse = User
-
-type LogoutResponse = {
-  message: string
-}
-
-type UpdateResponse = User
-
-type AvatarResponse = {
-  message: string
-  user: User
-}
+type User = { id: number; name: string; phone: string; email: string; role: 'customer' | 'driver' | 'admin'; avatar_url: string | null; preferred_language: PreferredLanguage; created_at: string; updated_at: string; }
+type ApiEnvelope<T> = { data: T }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 const TOKEN_KEY = 'grab_auth_token'
@@ -56,29 +18,29 @@ const LANGUAGE_KEY = 'grab_lang'
 
 const messages = {
   vi: {
-    appName: 'Mini Grab Auth',
-    login: 'Dang nhap',
-    register: 'Dang ky',
-    profile: 'Ho so',
-    logout: 'Dang xuat',
-    noAccount: 'Chua co tai khoan?',
-    hasAccount: 'Da co tai khoan?',
-    goRegister: 'Tao moi',
-    goLogin: 'Dang nhap ngay',
-    name: 'Ho ten',
-    phone: 'So dien thoai',
+    appName: 'Mini Grab',
+    login: 'Đăng nhập',
+    register: 'Đăng ký',
+    profile: 'Hồ sơ',
+    logout: 'Đăng xuất',
+    noAccount: 'Chưa có tài khoản?',
+    hasAccount: 'Đã có tài khoản?',
+    goRegister: 'Tạo tài khoản',
+    goLogin: 'Đăng nhập ngay',
+    name: 'Họ và tên',
+    phone: 'Số điện thoại',
     email: 'Email',
-    password: 'Mat khau',
-    role: 'Vai tro',
-    language: 'Ngon ngu',
-    avatar: 'Anh dai dien',
-    uploadAvatar: 'Tai anh',
-    save: 'Luu thay doi',
-    loading: 'Dang tai...',
-    authRequired: 'Vui long dang nhap de xem profile',
+    password: 'Mật khẩu',
+    role: 'Vai trò',
+    language: 'Ngôn ngữ',
+    avatar: 'Ảnh đại diện',
+    uploadAvatar: 'Tải ảnh lên',
+    save: 'Lưu thay đổi',
+    loading: 'Đang tải...',
+    authRequired: 'Vui lòng đăng nhập để xem hồ sơ',
   },
   en: {
-    appName: 'Mini Grab Auth',
+    appName: 'Mini Grab',
     login: 'Login',
     register: 'Register',
     profile: 'Profile',
@@ -87,15 +49,15 @@ const messages = {
     hasAccount: 'Already have an account?',
     goRegister: 'Create one',
     goLogin: 'Sign in now',
-    name: 'Name',
-    phone: 'Phone',
+    name: 'Full Name',
+    phone: 'Phone Number',
     email: 'Email',
     password: 'Password',
     role: 'Role',
     language: 'Language',
     avatar: 'Avatar',
-    uploadAvatar: 'Upload image',
-    save: 'Save changes',
+    uploadAvatar: 'Upload Image',
+    save: 'Save Changes',
     loading: 'Loading...',
     authRequired: 'Please log in to view profile',
   },
@@ -106,51 +68,72 @@ function getStoredLanguage(): PreferredLanguage {
   return raw === 'en' ? 'en' : 'vi'
 }
 
-async function requestApi<T>(
-  path: string,
-  options: RequestInit = {},
-  language: PreferredLanguage,
-): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+export let setGlobalWarning: (msg: string | null) => void = () => {}
+
+async function requestApi<T>(path: string, options: RequestInit = {}, language: PreferredLanguage): Promise<T> {
+  const response = await fetch(API_BASE_URL + path, {
     ...options,
     headers: {
       'Accept-Language': language,
       ...(options.headers ?? {}),
     },
   })
-
-  const data = (await response.json()) as ApiEnvelope<T> | { message?: string }
-
-  if (!response.ok) {
-    const errorMessage = 'message' in data && data.message ? data.message : `HTTP ${response.status}`
-    throw new Error(errorMessage)
+  
+  let data: any
+  try {
+    data = await response.json()
+  } catch {
+    throw new Error('Không thể đọc dữ liệu từ máy chủ (Invalid JSON)')
   }
 
-  return (data as ApiEnvelope<T>).data
+  // Cập nhật cảnh báo hệ thống từ envelope (nếu có)
+  if (data && typeof data === 'object') {
+    const warning = data.warning || data.message?.warning
+    if (warning) setGlobalWarning(warning)
+  }
+
+  if (!response.ok) {
+    let errorMessage = 'Lỗi hệ thống'
+    if (typeof data?.message === 'string') {
+      errorMessage = data.message
+    } else if (typeof data?.message === 'object' && data.message.warning) {
+      errorMessage = data.message.warning
+    } else if (data?.error) {
+      errorMessage = data.error
+    }
+    throw new Error(errorMessage)
+  }
+  
+  // Backend wrap data trong field 'data' qua hàm ok()
+  // Hoặc trả về trực tiếp đối tượng có field data (như getTripHistory)
+  return (data?.data !== undefined ? data.data : data) as T
 }
 
 function App() {
   const [language, setLanguage] = useState<PreferredLanguage>(getStoredLanguage)
   const [token, setToken] = useState<string>(localStorage.getItem(TOKEN_KEY) ?? '')
+  const [user, setUser] = useState<User | null>(null)
+  const [systemWarning, setSystemWarning] = useState<string | null>(null)
+
+  setGlobalWarning = setSystemWarning
 
   useEffect(() => {
     localStorage.setItem(LANGUAGE_KEY, language)
   }, [language])
 
-  const [user, setUser] = useState<User | null>(null)
-
   useEffect(() => {
     if (token) {
       localStorage.setItem(TOKEN_KEY, token)
-      // Tự động tải profile khi có token để biết Role
-      requestApi<ProfileResponse>('/auth/me', {
+      requestApi<User>('/auth/me', {
         headers: { Authorization: `Bearer ${token}` }
       }, language)
         .then(setUser)
-        .catch(() => setUser(null))
+        .catch(() => {
+          setToken('')
+          setUser(null)
+        })
       return
     }
-
     localStorage.removeItem(TOKEN_KEY)
     setUser(null)
   }, [token, language])
@@ -158,25 +141,14 @@ function App() {
   const labels = useMemo(() => messages[language], [language])
 
   const handleLogout = async () => {
-    if (!token) {
-      return
-    }
-
-    try {
-      await requestApi<LogoutResponse>(
-        '/auth/logout',
-        {
+    if (token) {
+      try {
+        await requestApi('/auth/logout', {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-        language,
-      )
-    } catch {
-      // Ignore logout API error and clear local token.
+          headers: { Authorization: `Bearer ${token}` }
+        }, language)
+      } catch {}
     }
-
     setToken('')
   }
 
@@ -184,48 +156,49 @@ function App() {
     <BrowserRouter>
       <div className="shell">
         <header className="topbar">
-          <h1>{labels.appName}</h1>
-          <div className="actions">
-            <select
-              value={language}
-              onChange={(event) => setLanguage(event.target.value as PreferredLanguage)}
-            >
+          <Link to="/login" className="topbar-brand">
+            <div className="topbar-logo">MG</div>
+            <span className="topbar-title">{labels.appName}</span>
+          </Link>
+          <div className="topbar-actions">
+            <select value={language} onChange={e => setLanguage(e.target.value as PreferredLanguage)}>
               <option value="vi">VI</option>
               <option value="en">EN</option>
             </select>
-            <nav>
-              {user?.role === 'admin' && (
-                <>
-                  <Link to="/admin" style={{ color: '#6c63ff', fontWeight: 'bold' }}>Admin</Link>
-                  <Link to="/dashboard" style={{ color: '#f59e0b', fontWeight: 'bold' }}>Dashboard</Link>
-                  <Link to="/monitor" style={{ color: '#ef4444', fontWeight: 'bold' }}>Monitor</Link>
-                </>
-              )}
-              <Link to="/login">{labels.login}</Link>
-              <Link to="/register">{labels.register}</Link>
-              <Link to="/profile">{labels.profile}</Link>
-              <button type="button" onClick={handleLogout}>
-                {labels.logout}
-              </button>
-            </nav>
+            {user?.role === 'admin' && (
+              <>
+                <Link to="/admin">Admin</Link>
+                <Link to="/dashboard">Dashboard</Link>
+                <Link to="/monitor">Monitor</Link>
+              </>
+            )}
+            {!token ? (
+              <>
+                <Link to="/login">{labels.login}</Link>
+                <Link to="/register">{labels.register}</Link>
+              </>
+            ) : (
+              <>
+                <Link to="/profile">{labels.profile}</Link>
+                <button type="button" onClick={handleLogout}>{labels.logout}</button>
+              </>
+            )}
           </div>
         </header>
 
+        {systemWarning && (
+          <div className="global-warning-banner">
+            <span className="warning-icon">⚠️</span>
+            <span className="warning-text">{systemWarning}</span>
+            <button className="close-warning" onClick={() => setSystemWarning(null)}>×</button>
+          </div>
+        )}
+
         <main className="content">
           <Routes>
-            <Route
-              path="/login"
-              element={<LoginPage language={language} onLogin={setToken} token={token} />}
-            />
+            <Route path="/login" element={<LoginPage language={language} onLogin={setToken} token={token} />} />
             <Route path="/register" element={<RegisterPage language={language} />} />
-            <Route
-              path="/profile"
-              element={
-                <RequireAuth token={token} fallback={labels.authRequired}>
-                  <ProfilePage language={language} token={token} />
-                </RequireAuth>
-              }
-            />
+            <Route path="/profile" element={<RequireAuth token={token} fallback={labels.authRequired}><ProfilePage language={language} token={token} /></RequireAuth>} />
             <Route path="/monitor" element={<SystemMonitor />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/admin" element={<AdminDashboard />} />
@@ -237,15 +210,7 @@ function App() {
   )
 }
 
-function LoginPage({
-  language,
-  onLogin,
-  token,
-}: {
-  language: PreferredLanguage
-  onLogin: (value: string) => void
-  token: string
-}) {
+function LoginPage({ language, onLogin, token }: { language: PreferredLanguage; onLogin: (v: string) => void; token: string }) {
   const labels = messages[language]
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
@@ -254,34 +219,23 @@ function LoginPage({
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    if (token) {
-      navigate('/profile')
-    }
+    if (token) navigate('/profile')
   }, [token, navigate])
 
-  const onSubmit = async (event: FormEvent) => {
-    event.preventDefault()
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault()
     setLoading(true)
     setMessage('')
-
     try {
-      const data = await requestApi<LoginResponse>(
-        '/auth/login',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ email, password }),
-        },
-        language,
-      )
-
+      const data = await requestApi<{ token: string; message: string; user: User }>('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      }, language)
       onLogin(data.token)
-      setMessage(data.message)
       navigate('/profile')
-    } catch (error) {
-      setMessage((error as Error).message)
+    } catch (err) {
+      setMessage((err as Error).message)
     } finally {
       setLoading(false)
     }
@@ -289,29 +243,35 @@ function LoginPage({
 
   return (
     <section className="card">
-      <h2>{labels.login}</h2>
+      <div className="card-hero">
+        <div className="card-logo">MG</div>
+        <h1 className="card-title">{language === 'vi' ? 'Chào mừng trở lại!' : 'Welcome back!'}</h1>
+        <p className="card-sub">{language === 'vi' ? 'Đăng nhập để tiếp tục sử dụng Mini Grab' : 'Login to continue using Mini Grab'}</p>
+      </div>
       <form onSubmit={onSubmit}>
-        <label>
-          {labels.email}
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
-        </label>
-        <label>
-          {labels.password}
-          <input
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            type="password"
-            required
-          />
-        </label>
-        <button type="submit" disabled={loading}>
+        <div className="form-group">
+          <label>{labels.email}</label>
+          <input value={email} onChange={e => setEmail(e.target.value)} type="email" required placeholder="email@example.com" />
+        </div>
+        <div className="form-group">
+          <label>{labels.password}</label>
+          <input value={password} onChange={e => setPassword(e.target.value)} type="password" required placeholder="••••••••" />
+        </div>
+        <button type="submit" className="btn-primary" disabled={loading}>
           {loading ? labels.loading : labels.login}
         </button>
       </form>
-      <p>{message}</p>
-      <p>
-        {labels.noAccount} <Link to="/register">{labels.goRegister}</Link>
-      </p>
+      {message && (
+        <p style={{
+          marginTop: 12,
+          fontSize: 14,
+          color: message.toLowerCase().includes('thành') || message.toLowerCase().includes('success') ? '#065F46' : '#991B1B',
+          textAlign: 'center'
+        }}>
+          {message}
+        </p>
+      )}
+      <p className="link-row">{labels.noAccount} <Link to="/register">{labels.goRegister}</Link></p>
     </section>
   )
 }
@@ -323,39 +283,23 @@ function RegisterPage({ language }: { language: PreferredLanguage }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<'customer' | 'driver' | 'admin'>('customer')
-  const [preferredLanguage, setPreferredLanguage] = useState<PreferredLanguage>(language)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
-  const onSubmit = async (event: FormEvent) => {
-    event.preventDefault()
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault()
     setLoading(true)
     setMessage('')
-
     try {
-      const data = await requestApi<RegisterResponse>(
-        '/auth/register',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            name,
-            phone,
-            email,
-            password,
-            role,
-            preferred_language: preferredLanguage,
-          }),
-        },
-        language,
-      )
-
+      const data = await requestApi<{ message: string }>('/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, email, password, role, preferred_language: language })
+      }, language)
       setMessage(data.message)
       setPassword('')
-    } catch (error) {
-      setMessage((error as Error).message)
+    } catch (err) {
+      setMessage((err as Error).message)
     } finally {
       setLoading(false)
     }
@@ -363,59 +307,57 @@ function RegisterPage({ language }: { language: PreferredLanguage }) {
 
   return (
     <section className="card">
-      <h2>{labels.register}</h2>
+      <h2 className="card-section-title">{labels.register}</h2>
       <form onSubmit={onSubmit}>
-        <label>
-          {labels.name}
-          <input value={name} onChange={(event) => setName(event.target.value)} required />
-        </label>
-        <label>
-          {labels.phone}
-          <input value={phone} onChange={(event) => setPhone(event.target.value)} required />
-        </label>
-        <label>
-          {labels.email}
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
-        </label>
-        <label>
-          {labels.password}
-          <input
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            type="password"
-            required
-          />
-        </label>
-        <label>
-          {labels.role}
-          <select value={role} onChange={(event) => setRole(event.target.value as 'customer' | 'driver' | 'admin')}>
-            <option value="customer">customer</option>
-            <option value="driver">driver</option>
-            <option value="admin">admin</option>
-          </select>
-        </label>
-        <label>
-          {labels.language}
-          <select
-            value={preferredLanguage}
-            onChange={(event) => setPreferredLanguage(event.target.value as PreferredLanguage)}
-          >
-            <option value="vi">vi</option>
-            <option value="en">en</option>
-          </select>
-        </label>
-        <button type="submit" disabled={loading}>
+        <div className="form-group">
+          <label>{labels.name}</label>
+          <input value={name} onChange={e => setName(e.target.value)} required placeholder={language === 'vi' ? 'Nguyễn Văn A' : 'John Doe'} />
+        </div>
+        <div className="form-group">
+          <label>{labels.phone}</label>
+          <input value={phone} onChange={e => setPhone(e.target.value)} required placeholder="0901234567" />
+        </div>
+        <div className="form-group">
+          <label>{labels.email}</label>
+          <input value={email} onChange={e => setEmail(e.target.value)} type="email" required placeholder="email@example.com" />
+        </div>
+        <div className="form-group">
+          <label>{labels.password}</label>
+          <input value={password} onChange={e => setPassword(e.target.value)} type="password" required placeholder="••••••••" />
+        </div>
+        <div className="form-group">
+          <label>{labels.role}</label>
+          <div className="chip-row">
+            {(['customer', 'driver'] as const).map(r => (
+              <button
+                key={r}
+                type="button"
+                className={`chip${role === r ? ' active' : ''}`}
+                onClick={() => setRole(r)}
+              >
+                {r === 'customer' ? (language === 'vi' ? 'Khách hàng' : 'Customer') : (language === 'vi' ? 'Tài xế' : 'Driver')}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button type="submit" className="btn-primary" disabled={loading}>
           {loading ? labels.loading : labels.register}
         </button>
       </form>
-      <p>{message}</p>
-      <p>
-        {labels.hasAccount} <Link to="/login">{labels.goLogin}</Link>
-      </p>
+      {message && (
+        <p style={{
+          marginTop: 12,
+          fontSize: 14,
+          textAlign: 'center',
+          color: message.toLowerCase().includes('thành') || message.toLowerCase().includes('success') ? '#065F46' : '#991B1B'
+        }}>
+          {message}
+        </p>
+      )}
+      <p className="link-row">{labels.hasAccount} <Link to="/login">{labels.goLogin}</Link></p>
     </section>
   )
 }
-
 function ProfilePage({ language, token }: { language: PreferredLanguage; token: string }) {
   const labels = messages[language]
   const [profile, setProfile] = useState<User | null>(null)
@@ -431,61 +373,40 @@ function ProfilePage({ language, token }: { language: PreferredLanguage; token: 
     setLoading(true)
     setMessage('')
     try {
-      const data = await requestApi<ProfileResponse>(
-        '/auth/me',
-        {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-        language,
-      )
-
+      const data = await requestApi<User>('/auth/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      }, language)
       setProfile(data)
       setName(data.name)
       setPhone(data.phone)
       setEmail(data.email)
       setPreferredLanguage(data.preferred_language)
-    } catch (error) {
-      setMessage((error as Error).message)
+    } catch (err) {
+      setMessage((err as Error).message)
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    void loadMe()
-  }, [token, language])
+  useEffect(() => { void loadMe() }, [token, language])
 
-  const onSaveProfile = async (event: FormEvent) => {
-    event.preventDefault()
+  const onSave = async (e: FormEvent) => {
+    e.preventDefault()
     setLoading(true)
     setMessage('')
-
     try {
-      const data = await requestApi<UpdateResponse>(
-        '/auth/me',
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            name,
-            phone,
-            email,
-            preferred_language: preferredLanguage,
-          }),
+      const data = await requestApi<User>('/auth/me', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
         },
-        language,
-      )
-
+        body: JSON.stringify({ name, phone, email, preferred_language: preferredLanguage })
+      }, language)
       setProfile(data)
-      setMessage('OK')
-    } catch (error) {
-      setMessage((error as Error).message)
+      setMessage(language === 'vi' ? 'Đã lưu thành công!' : 'Saved successfully!')
+    } catch (err) {
+      setMessage((err as Error).message)
     } finally {
       setLoading(false)
     }
@@ -493,142 +414,132 @@ function ProfilePage({ language, token }: { language: PreferredLanguage; token: 
 
   const onUploadAvatar = async () => {
     if (!avatar) {
-      setMessage('Please select image first')
+      setMessage(language === 'vi' ? 'Vui lòng chọn ảnh trước' : 'Please select an image first')
       return
     }
-
     setLoading(true)
     setMessage('')
-
     try {
-      const formData = new FormData()
-      formData.append('avatar', avatar)
-
-      const data = await requestApi<AvatarResponse>(
-        '/auth/me/avatar',
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        },
-        language,
-      )
-
+      const fd = new FormData()
+      fd.append('avatar', avatar)
+      const data = await requestApi<{ message: string; user: User }>('/auth/me/avatar', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd
+      }, language)
       setProfile(data.user)
       setMessage(data.message)
-    } catch (error) {
-      setMessage((error as Error).message)
+    } catch (err) {
+      setMessage((err as Error).message)
     } finally {
       setLoading(false)
     }
   }
 
-  const avatarUrl = profile?.avatar_url ? `${API_BASE_URL}${profile.avatar_url}` : ''
+  const avatarUrl = profile?.avatar_url ? API_BASE_URL + profile.avatar_url : ''
 
   return (
     <section className="card">
-      <h2>{labels.profile}</h2>
-      <button type="button" onClick={loadMe} disabled={loading}>
-        {loading ? labels.loading : 'Refresh'}
+      <h2 className="card-section-title">{labels.profile}</h2>
+      <button type="button" className="btn-outline" onClick={loadMe} disabled={loading} style={{ marginBottom: 16 }}>
+        {loading ? labels.loading : (language === 'vi' ? 'Tải lại' : 'Reload')}
       </button>
+      
+      {avatarUrl && <img className="avatar" src={avatarUrl} alt="avatar" />}
+      
+      <div className="form-group">
+        <label>{labels.avatar}</label>
+        <input type="file" accept="image/*" onChange={e => setAvatar(e.target.files?.[0] ?? null)} />
+        <button type="button" className="btn-outline" onClick={onUploadAvatar} disabled={loading} style={{ marginTop: 8 }}>
+          {labels.uploadAvatar}
+        </button>
+      </div>
 
-      {avatarUrl ? <img className="avatar" src={avatarUrl} alt="avatar" /> : null}
-
-      <label>
-        {labels.avatar}
-        <input type="file" accept="image/*" onChange={(event) => setAvatar(event.target.files?.[0] ?? null)} />
-      </label>
-      <button type="button" onClick={onUploadAvatar} disabled={loading}>
-        {labels.uploadAvatar}
-      </button>
-
-      <form onSubmit={onSaveProfile}>
-        <label>
-          {labels.name}
-          <input value={name} onChange={(event) => setName(event.target.value)} required />
-        </label>
-        <label>
-          {labels.phone}
-          <input value={phone} onChange={(event) => setPhone(event.target.value)} required />
-        </label>
-        <label>
-          {labels.email}
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required />
-        </label>
-        <label>
-          {labels.language}
-          <select
-            value={preferredLanguage}
-            onChange={(event) => setPreferredLanguage(event.target.value as PreferredLanguage)}
-          >
-            <option value="vi">vi</option>
-            <option value="en">en</option>
+      <form onSubmit={onSave}>
+        <div className="form-group">
+          <label>{labels.name}</label>
+          <input value={name} onChange={e => setName(e.target.value)} required />
+        </div>
+        <div className="form-group">
+          <label>{labels.phone}</label>
+          <input value={phone} onChange={e => setPhone(e.target.value)} required />
+        </div>
+        <div className="form-group">
+          <label>{labels.email}</label>
+          <input value={email} onChange={e => setEmail(e.target.value)} type="email" required />
+        </div>
+        <div className="form-group">
+          <label>{labels.language}</label>
+          <select value={preferredLanguage} onChange={e => setPreferredLanguage(e.target.value as PreferredLanguage)}>
+            <option value="vi">Tiếng Việt</option>
+            <option value="en">English</option>
           </select>
-        </label>
-        <button type="submit" disabled={loading}>
+        </div>
+        <button type="submit" className="btn-primary" disabled={loading}>
           {loading ? labels.loading : labels.save}
         </button>
       </form>
-
-      <p>{message}</p>
+      
+      {message && (
+        <p style={{
+          marginTop: 12,
+          fontSize: 14,
+          textAlign: 'center',
+          color: message.toLowerCase().includes('thành') || message.toLowerCase().includes('success') ? '#065F46' : '#991B1B'
+        }}>
+          {message}
+        </p>
+      )}
     </section>
   )
 }
 
-function RequireAuth({
-  token,
-  children,
-  fallback,
-}: {
-  token: string
-  children: ReactElement
-  fallback: string
-}) {
+function RequireAuth({ token, children, fallback }: { token: string; children: ReactElement; fallback: string }) {
   if (!token) {
     return (
       <section className="card">
-        <p>{fallback}</p>
-        <Link to="/login">Login</Link>
+        <p style={{ textAlign: 'center', color: '#6B7280', marginBottom: 16 }}>{fallback}</p>
+        <Link to="/login" className="btn-primary" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+          Đăng nhập
+        </Link>
       </section>
     )
   }
-
   return children
 }
 
 function AdminDashboard() {
-  const [tab, setTab] = useState<'users' | 'drivers' | 'payments'>('users');
-
+  const [tab, setTab] = useState<'users' | 'drivers' | 'payments'>('users')
+  const tabs = [
+    { id: 'users' as const, label: 'Quản lý User' },
+    { id: 'drivers' as const, label: 'Quản lý Tài xế' },
+    { id: 'payments' as const, label: 'Thanh toán' }
+  ]
+  
   return (
-    <div style={{ minHeight: '100vh', background: '#13131f', color: 'white', fontFamily: 'sans-serif', margin: '-1.5rem -1rem' }}>
-      <nav style={{ background: '#1a1a2e', padding: '0 32px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #2a2a3e' }}>
-        <span style={{ fontWeight: 'bold', fontSize: 18, marginRight: 32, padding: '16px 0' }}>🚖 Mini Grab Admin</span>
-        <button onClick={() => setTab('users')} style={{ ...navBtn, borderBottom: tab === 'users' ? '2px solid #6c63ff' : '2px solid transparent', color: tab === 'users' ? '#6c63ff' : '#aaa' }}>
-          👥 Quản lý User
-        </button>
-        <button onClick={() => setTab('drivers')} style={{ ...navBtn, borderBottom: tab === 'drivers' ? '2px solid #00b894' : '2px solid transparent', color: tab === 'drivers' ? '#00b894' : '#aaa' }}>
-          🚗 Quản lý Tài xế
-        </button>
-        <button onClick={() => setTab('payments')} style={{ ...navBtn, borderBottom: tab === 'payments' ? '2px solid #fdcb6e' : '2px solid transparent', color: tab === 'payments' ? '#fdcb6e' : '#aaa' }}>
-  💳 Thanh toán
-</button>
+    <div className="admin-shell" style={{ width: 'calc(100% + 32px)', margin: '-24px -16px', minWidth: 0 }}>
+      <nav className="admin-nav">
+        <div className="admin-nav-brand">
+          <div className="admin-nav-logo">MG</div>
+          <span className="admin-nav-title">Mini Grab Admin</span>
+        </div>
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            className={`admin-nav-btn${tab === t.id ? ' active' : ''}`}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
       </nav>
-
-      <div style={{ display: tab === 'users' ? 'block' : 'none' }}>
-        <AdminUsers />
+      <div className="admin-content">
+        {tab === 'users' && <AdminUsers />}
+        {tab === 'drivers' && <AdminDrivers />}
+        {tab === 'payments' && <AdminPayments />}
       </div>
-      <div style={{ display: tab === 'drivers' ? 'block' : 'none' }}>
-        <AdminDrivers />
-      </div>
-      <div style={{ display: tab === 'payments' ? 'block' : 'none' }}>
-  <AdminPayments />
-</div>
     </div>
-  );
+  )
 }
-
-const navBtn: any = { background: 'none', border: 'none', color: '#aaa', padding: '16px 16px', cursor: 'pointer', fontSize: 14, fontWeight: 600 };
 
 export default App
