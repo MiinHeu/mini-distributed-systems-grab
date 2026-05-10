@@ -12,7 +12,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
 import { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -44,6 +44,21 @@ class RegisterDto {
   @IsEnum(['vi', 'en'])
   @IsOptional()
   preferred_language?: 'vi' | 'en';
+
+  @IsNumber()
+  @IsOptional()
+  latitude?: number;
+  @IsNumber()
+  @IsOptional()
+  longitude?: number;
+
+  @IsString()
+  @IsOptional()
+  vehicle_plate?: string;
+
+  @IsString()
+  @IsOptional()
+  vehicle_type?: string;
 }
 
 class LoginDto {

@@ -4,11 +4,12 @@ import {
   Injectable,
   UnauthorizedException,
   ServiceUnavailableException,
+  Logger,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { compare, hash } from 'bcryptjs';
 import { sign, verify } from 'jsonwebtoken';
-import { Region } from '../common/location.utils';
+import { Region, determineRegionFromLocation } from '../common/location.utils';
 import {
   AuthUser,
   JwtPayload,
@@ -24,6 +25,10 @@ type RegisterInput = {
   password?: string;
   role?: UserRole;
   preferred_language?: PreferredLanguage;
+  latitude?: number;
+  longitude?: number;
+  vehicle_plate?: string;
+  vehicle_type?: string;
 };
 
 type LoginInput = {
@@ -42,6 +47,8 @@ type PatchProfileInput = {
 @Injectable()
 export class AuthService {
   private readonly revokedTokens = new Set<string>();
+
+  private readonly logger = new Logger(AuthService.name);
 
   constructor(private readonly database: DatabaseService) {}
 
@@ -109,7 +116,7 @@ export class AuthService {
 
   private sanitizeUser(row: Record<string, unknown>): AuthUser {
     return {
-      id: Number(row.id),
+      id: String(row.id),
       name: String(row.name ?? ''),
       phone: String(row.phone ?? ''),
       email: String(row.email ?? ''),
@@ -160,28 +167,53 @@ export class AuthService {
 
     const passwordHash = await hash(password, 10);
 
-    // 2. Cố gắng ghi vào vùng NORTH (mặc định), nếu hỏng thì thử SOUTH
-    let created: any = null;
+    // 2. Xác định vùng mục tiêu dựa trên vị trí (Nếu không có vị trí, ưu tiên NORTH)
     let targetRegion: Region = Region.NORTH;
+    if (typeof input.latitude === 'number') {
+      targetRegion = determineRegionFromLocation(input.latitude);
+      console.log(`[AuthAudit] Đăng ký dựa trên vị trí: ${input.latitude} => Vùng ${targetRegion}`);
+    }
 
-    for (const r of [Region.NORTH, Region.SOUTH]) {
+    let created: any = null;
+    const userId = this.database.generateId();
+    const driverId = this.database.generateId();
+    
+    // Thử ghi vào tất cả các vùng để hỗ trợ đặt xe liên tỉnh (Full Replication cho User)
+    const regions = [Region.NORTH, Region.SOUTH];
+
+    for (const r of regions) {
       try {
-        console.log(`[AuthAudit] Đang thử đăng ký tại vùng: ${r}`);
+        console.log(`[AuthAudit] Đang thử ghi tài khoản tại vùng: ${r} với ID: ${userId}`);
         const { result } = await this.database.queryWithFailover(
           r,
-          `INSERT INTO users(name, phone, email, password, role, preferred_language)
-           VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO users(id, name, phone, email, password, role, preferred_language)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING ${this.userSelectColumns}`,
-          [name, phone, normalizedEmail, passwordHash, role, preferredLanguage],
+          [userId, name, phone, normalizedEmail, passwordHash, role, preferredLanguage],
           true,
         );
-        created = result.rows[0];
-        targetRegion = r;
-        console.log(`[AuthAudit] Đăng ký thành công tại: ${r}`);
-        break;
-      } catch (e: any) {
-        console.warn(`[AuthAudit] Đăng ký tại ${r} thất bại: ${e.message || JSON.stringify(e)}`);
-        if (r === Region.SOUTH) throw e;
+        
+        if (!created) {
+          created = result.rows[0];
+        }
+
+        // Nếu là tài xế, tạo hồ sơ phương tiện tại tất cả các vùng (Replication)
+        // Điều này cho phép tài xế có thể di chuyển và làm việc liên vùng
+        if (role === 'driver') {
+          const vPlate = input.vehicle_plate?.trim() || 'BIEN-SO-888';
+          const vType = input.vehicle_type?.trim() || 'bike';
+
+          await this.database.queryWithFailover(
+            r,
+            `INSERT INTO drivers(id, user_id, vehicle_plate, vehicle_type, region, is_available)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [driverId, userId, vPlate, vType, r, false],
+            true
+          );
+        }
+        console.log(`[AuthAudit] Ghi tài khoản thành công tại vùng: ${r}`);
+      } catch (err) {
+        this.logger.error(`[Auth] Lỗi khi ghi tài khoản tại vùng ${r}: ${err.message}`);
       }
     }
 
@@ -259,7 +291,7 @@ export class AuthService {
       const payload = verify(token, this.getJwtSecret());
       if (
         typeof payload === 'string' ||
-        typeof payload.sub !== 'number' ||
+        (typeof payload.sub !== 'string' && typeof payload.sub !== 'number') ||
         (payload.role !== 'customer' &&
           payload.role !== 'driver' &&
           payload.role !== 'admin') ||

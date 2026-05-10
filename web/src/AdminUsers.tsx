@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react'
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 const TOKEN_KEY = 'grab_auth_token'
 
-type User = { id: number; name: string; email: string; role: string; is_suspended?: boolean; created_at: string; }
+type User = { id: number; name: string; email: string; role: string; is_suspended?: boolean; created_at: string; region?: string; }
 
 const ROLE_BADGE: Record<string, string> = { admin: 'badge-blue', driver: 'badge-green', customer: 'badge-gray' }
 const ROLE_LABEL: Record<string, string> = { admin: 'Quản trị', driver: 'Tài xế', customer: 'Khách hàng' }
@@ -11,6 +11,7 @@ const ROLE_LABEL: Record<string, string> = { admin: 'Quản trị', driver: 'Tà
 export default function AdminUsers() {
   const [users, setUsers] = useState<User[]>([])
   const [search, setSearch] = useState('')
+  const [regionFilter, setRegionFilter] = useState('ALL')
   const [loading, setLoading] = useState(false)
   const token = localStorage.getItem(TOKEN_KEY) ?? ''
 
@@ -53,17 +54,20 @@ export default function AdminUsers() {
     setUsers(prev => prev.filter(u => u.id !== id))
   }
 
-  const filtered = users.filter(u =>
-    u.name?.toLowerCase().includes(search.toLowerCase()) ||
-    u.email?.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = users.filter(u => {
+    const matchesSearch = u.name?.toLowerCase().includes(search.toLowerCase()) ||
+                        u.email?.toLowerCase().includes(search.toLowerCase());
+    const matchesRegion = regionFilter === 'ALL' || 
+                        u.region?.toString().toUpperCase() === regionFilter.toUpperCase();
+    return matchesSearch && matchesRegion;
+  })
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <h2 style={{ fontSize: 20, fontWeight: 800, color: 'white' }}>Quản lý người dùng</h2>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <input className="search-input" placeholder="Tìm kiếm theo tên hoặc email..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input className="search-input" style={{ width: 250 }} placeholder="Tìm kiếm theo tên hoặc email..." value={search} onChange={e => setSearch(e.target.value)} />
           <button className="btn-success" onClick={fetchUsers}>Tải lại</button>
         </div>
       </div>

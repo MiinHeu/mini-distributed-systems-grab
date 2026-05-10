@@ -7,13 +7,31 @@ export class AdminService {
   constructor(private readonly db: DatabaseService) {}
 
   async getAllUsers() {
-    const { result } = await this.db.queryWithFailover(
-      Region.NORTH,
-      'SELECT id, name, phone, email, role, created_at FROM users ORDER BY created_at DESC',
-      [],
-      false,
+    const regions = [Region.NORTH, Region.SOUTH];
+    const userMap = new Map<string, any>();
+    
+    for (const region of regions) {
+      try {
+        const { result } = await this.db.queryWithFailover(
+          region,
+          "SELECT id, name, phone, email, role, created_at, '" + region + "' as region FROM users ORDER BY created_at DESC",
+          [],
+          false,
+        );
+        for (const row of result.rows) {
+          if (!userMap.has(row.id)) {
+            userMap.set(row.id, row);
+          }
+        }
+      } catch (err) {
+        console.error(`Lỗi khi lấy user từ vùng ${region}:`, err.message);
+      }
+    }
+    
+    const allUsers = Array.from(userMap.values());
+    return allUsers.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
-    return result.rows;
   }
 
   async getDrivers(regionFilter?: string) {
@@ -21,7 +39,7 @@ export class AdminService {
       ? [regionFilter.toUpperCase() as Region]
       : [Region.NORTH, Region.SOUTH];
 
-    const allDrivers: any[] = [];
+    const driverMap = new Map<string, any>();
     for (const region of regions) {
       try {
         const { result } = await this.db.queryWithFailover(
@@ -32,46 +50,60 @@ export class AdminService {
           [],
           false,
         );
-        allDrivers.push(...result.rows);
+        for (const row of result.rows) {
+          if (!driverMap.has(row.id)) {
+            driverMap.set(row.id, row);
+          }
+        }
       } catch {
         // Skip if region is down
       }
     }
-    return allDrivers;
+    return Array.from(driverMap.values());
   }
 
   async unsuspendUser(id: string) {
-    const { result } = await this.db.queryWithFailover(
-      Region.NORTH,
-      'UPDATE users SET updated_at = NOW() WHERE id = $1 RETURNING id, name',
-      [id],
-      true,
-    );
-    if (result.rowCount === 0) throw new NotFoundException('User không tồn tại');
-    return { message: `Đã cập nhật trạng thái user ${id}`, id, is_suspended: false };
+    for (const region of [Region.NORTH, Region.SOUTH]) {
+      const { result } = await this.db.queryWithFailover(
+        region,
+        'UPDATE users SET updated_at = NOW() WHERE id = $1 RETURNING id, name',
+        [id],
+        true,
+      );
+      if (result && (result.rowCount ?? 0) > 0) {
+        return { message: `Đã mở khóa user ${id} tại ${region}`, id, is_suspended: false };
+      }
+    }
+    throw new NotFoundException('User không tồn tại ở bất kỳ khu vực nào');
   }
 
   async suspendUser(id: string) {
-    // Giả lập khóa tài khoản (nếu schema có field is_suspended, dùng nó)
-    // Ở đây ta chỉ cập nhật updated_at làm ví dụ nếu schema chưa có
-    const { result } = await this.db.queryWithFailover(
-      Region.NORTH,
-      'UPDATE users SET updated_at = NOW() WHERE id = $1 RETURNING id, name',
-      [id],
-      true,
-    );
-    if (result.rowCount === 0) throw new NotFoundException('User không tồn tại');
-    return { message: `Đã khóa tài khoản user ${id}`, id, is_suspended: true };
+    for (const region of [Region.NORTH, Region.SOUTH]) {
+      const { result } = await this.db.queryWithFailover(
+        region,
+        'UPDATE users SET updated_at = NOW() WHERE id = $1 RETURNING id, name',
+        [id],
+        true,
+      );
+      if (result && (result.rowCount ?? 0) > 0) {
+        return { message: `Đã khóa tài khoản user ${id} tại ${region}`, id, is_suspended: true };
+      }
+    }
+    throw new NotFoundException('User không tồn tại ở bất kỳ khu vực nào');
   }
 
   async deleteUser(id: string) {
-    const { result } = await this.db.queryWithFailover(
-      Region.NORTH,
-      'DELETE FROM users WHERE id = $1 RETURNING id',
-      [id],
-      true,
-    );
-    if (result.rowCount === 0) throw new NotFoundException('User không tồn tại');
-    return { message: `Đã xóa user ${id}`, id };
+    for (const region of [Region.NORTH, Region.SOUTH]) {
+      const { result } = await this.db.queryWithFailover(
+        region,
+        'DELETE FROM users WHERE id = $1 RETURNING id',
+        [id],
+        true,
+      );
+      if (result && (result.rowCount ?? 0) > 0) {
+        return { message: `Đã xóa user ${id} tại ${region}`, id };
+      }
+    }
+    throw new NotFoundException('User không tồn tại ở bất kỳ khu vực nào');
   }
 }

@@ -22,14 +22,14 @@ export enum TripRegion {
 @Entity('trips')
 @Index('idx_trips_status_region', ['status', 'region'])
 export class Trip {
-  @PrimaryGeneratedColumn()
-  id: number;
+  @PrimaryGeneratedColumn({ type: 'bigint' })
+  id: string;
 
-  @Column()
-  customer_id: number;
+  @Column({ type: 'bigint' })
+  customer_id: string;
 
-  @Column({ nullable: true })
-  driver_id: number;
+  @Column({ type: 'bigint', nullable: true })
+  driver_id: string;
 
   @Column()
   pickup_address: string;

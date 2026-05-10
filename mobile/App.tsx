@@ -4,6 +4,7 @@ import {
   StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import DriverHomeScreen from './src/screens/DriverHomeScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import BookingScreen from './src/screens/BookingScreen';
@@ -13,8 +14,13 @@ import { Colors, Spacing, Radius, Shadow } from './src/theme';
 
 type Screen = 'login' | 'register' | 'profile' | 'driver_home' | 'chat' | 'booking' | 'history';
 type PreferredLanguage = 'vi' | 'en';
-type User = { id: number; name: string; phone: string; email: string; role: 'customer' | 'driver' | 'admin'; avatar_url: string | null; preferred_language: PreferredLanguage; created_at: string; updated_at: string; };
-type ChatParams = { tripId: number; receiverId: number; receiverName: string };
+type User = { id: string; name: string; phone: string; email: string; role: 'customer' | 'driver' | 'admin'; avatar_url: string | null; preferred_language: PreferredLanguage; created_at: string; updated_at: string; };
+type MockLocation = { city: 'HN' | 'HCM'; lat: number; lng: number };
+const MOCK_LOCS: Record<string, MockLocation> = {
+  HN: { city: 'HN', lat: 21.0285, lng: 105.8542 },
+  HCM: { city: 'HCM', lat: 10.7769, lng: 106.7009 },
+};
+type ChatParams = { tripId: string; receiverId: string; receiverName: string };
 type ApiEnvelope<T> = { data: T };
 
 async function requestApi<T>(path: string, language: PreferredLanguage, options: RequestInit = {}): Promise<T> {
@@ -36,6 +42,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
   const [chatParams, setChatParams] = useState<ChatParams | null>(null);
+  const [mockLoc, setMockLoc] = useState<MockLocation | null>(null);
   const labels = useMemo(() => i18n[language], [language]);
 
   const handleLogin = (nextToken: string, user: User) => {
@@ -48,19 +55,19 @@ export default function App() {
     setToken(''); setCurrentUser(null); setChatParams(null); setScreen('login');
   };
 
-  const handleOpenChat = (tripId: number, receiverId: number, receiverName: string) => {
+  const handleOpenChat = (tripId: string, receiverId: string, receiverName: string) => {
     setChatParams({ tripId, receiverId, receiverName }); setScreen('chat');
   };
 
   if (screen === 'chat' && chatParams && currentUser) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.primary }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.primary, paddingTop: StatusBar.currentHeight ?? 0 }}>
         <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
         <View style={S.chatHeader}>
-          <TouchableOpacity onPress={() => setScreen('driver_home')} style={S.backBtn}>
+          <TouchableOpacity onPress={() => setScreen(currentUser.role === 'driver' ? 'driver_home' : 'booking')} style={S.backBtn}>
             <Text style={S.backBtnText}>{'<'} Quay lại</Text>
           </TouchableOpacity>
-          <Text style={S.chatHeaderTitle}>Tin nhắn</Text>
+          <Text style={S.chatHeaderTitle}>{chatParams.receiverName}</Text>
           <View style={{ width: 80 }} />
         </View>
         <ChatScreen tripId={chatParams.tripId} currentUserId={currentUser.id} receiverId={chatParams.receiverId} receiverName={chatParams.receiverName} token={token} />
@@ -70,8 +77,31 @@ export default function App() {
 
   if (screen === 'driver_home' && currentUser?.role === 'driver') {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bgScreen }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bgScreen, paddingTop: StatusBar.currentHeight ?? 0 }}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.white} />
+        {/* Mock Bar dành cho Driver - Đưa lên trên cùng */}
+        <View style={[S.mockBar, { borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' }]}>
+          <Text style={S.mockBarLabel}>Demo:</Text>
+          <TouchableOpacity 
+            style={[S.mockBtn, mockLoc?.city === 'HN' && S.mockBtnActive]} 
+            onPress={() => setMockLoc(MOCK_LOCS.HN)}
+          >
+            <Text style={[S.mockBtnText, mockLoc?.city === 'HN' && S.mockBtnTextActive]}>Bắc (HN)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[S.mockBtn, mockLoc?.city === 'HCM' && S.mockBtnActive]} 
+            onPress={() => setMockLoc(MOCK_LOCS.HCM)}
+          >
+            <Text style={[S.mockBtnText, mockLoc?.city === 'HCM' && S.mockBtnTextActive]}>Nam (HCM)</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[S.mockBtn, !mockLoc && S.mockBtnActive]} 
+            onPress={() => setMockLoc(null)}
+          >
+            <Text style={[S.mockBtnText, !mockLoc && S.mockBtnTextActive]}>GPS</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={S.topBar}>
           <View style={S.topBarLeft}>
             <View style={S.logoMini}><Text style={S.logoMiniText}>MG</Text></View>
@@ -81,14 +111,44 @@ export default function App() {
             <Text style={S.logoutPillText}>Đăng xuất</Text>
           </TouchableOpacity>
         </View>
-        <DriverHomeScreen token={token} userId={currentUser.id} onOpenChat={handleOpenChat} />
+
+        <DriverHomeScreen 
+          token={token} 
+          userId={currentUser.id} 
+          onOpenChat={handleOpenChat} 
+          mockLoc={mockLoc}
+        />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={S.safeArea}>
+    <SafeAreaView style={[S.safeArea, { paddingTop: StatusBar.currentHeight ?? 0 }]}>
       <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
+      
+      {/* Thanh giả lập vị trí cho báo cáo */}
+      <View style={S.mockBar}>
+        <Text style={S.mockBarLabel}>Demo:</Text>
+        <TouchableOpacity 
+          style={[S.mockBtn, mockLoc?.city === 'HN' && S.mockBtnActive]} 
+          onPress={() => setMockLoc(MOCK_LOCS.HN)}
+        >
+          <Text style={[S.mockBtnText, mockLoc?.city === 'HN' && S.mockBtnTextActive]}>Bắc (HN)</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[S.mockBtn, mockLoc?.city === 'HCM' && S.mockBtnActive]} 
+          onPress={() => setMockLoc(MOCK_LOCS.HCM)}
+        >
+          <Text style={[S.mockBtnText, mockLoc?.city === 'HCM' && S.mockBtnTextActive]}>Nam (HCM)</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[S.mockBtn, !mockLoc && S.mockBtnActive]} 
+          onPress={() => setMockLoc(null)}
+        >
+          <Text style={[S.mockBtnText, !mockLoc && S.mockBtnTextActive]}>GPS</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={S.header}>
         <View style={S.logoWrap}>
           <View style={S.logoBadge}><Text style={S.logoBadgeText}>MG</Text></View>
@@ -127,9 +187,9 @@ export default function App() {
 
       <View style={S.content}>
         {screen === 'login' && <LoginScreen language={language} onLogin={handleLogin} setLoading={setLoading} onGoRegister={() => setScreen('register')} />}
-        {screen === 'register' && <RegisterScreen language={language} setLoading={setLoading} onGoLogin={() => setScreen('login')} />}
+        {screen === 'register' && <RegisterScreen language={language} setLoading={setLoading} onGoLogin={() => setScreen('login')} mockLoc={mockLoc} />}
         {screen === 'profile' && <ProfileScreen language={language} token={token} setLoading={setLoading} onNeedLogin={() => setScreen('login')} />}
-        {screen === 'booking' && <BookingScreen token={token} />}
+        {screen === 'booking' && <BookingScreen token={token} mockLoc={mockLoc} />}
         {screen === 'history' && <HistoryScreen token={token} />}
       </View>
     </SafeAreaView>
@@ -179,18 +239,50 @@ function LoginScreen({ language, onLogin, setLoading, onGoRegister }: { language
 }
 
 // ─── RegisterScreen ───────────────────────────────────────────────────────────
-function RegisterScreen({ language, setLoading, onGoLogin }: { language: PreferredLanguage; setLoading: (v: boolean) => void; onGoLogin: () => void }) {
+function RegisterScreen({ language, setLoading, onGoLogin, mockLoc }: { language: PreferredLanguage; setLoading: (v: boolean) => void; onGoLogin: () => void; mockLoc: MockLocation | null }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'customer' | 'driver' | 'admin'>('customer');
+  const [vehiclePlate, setVehiclePlate] = useState('');
+  const [vehicleType, setVehicleType] = useState('bike');
 
   const submit = async () => {
     if (!name || !phone || !email || !password) { Alert.alert('Thông báo', 'Vui lòng điền đầy đủ thông tin'); return; }
     setLoading(true);
     try {
-      const data = await requestApi<{ message: string }>('/auth/register', language, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, phone, email, password, role, preferred_language: language }) });
+      // 1. Lấy tọa độ (Ưu tiên mockLoc nếu có)
+      let lat: number | undefined;
+      let lng: number | undefined;
+
+      if (mockLoc) {
+        lat = mockLoc.lat;
+        lng = mockLoc.lng;
+      } else {
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status === 'granted') {
+            const loc = await Location.getCurrentPositionAsync({});
+            lat = loc.coords.latitude;
+            lng = loc.coords.longitude;
+          }
+        } catch (err) { console.warn('GPS lỗi:', err); }
+      }
+
+      // 2. Gửi API
+      const data = await requestApi<{ message: string }>('/auth/register', language, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          name, phone, email, password, role, 
+          preferred_language: language, 
+          latitude: lat, longitude: lng,
+          vehicle_plate: role === 'driver' ? vehiclePlate : undefined,
+          vehicle_type: role === 'driver' ? vehicleType : undefined
+        })
+      });
+
       Alert.alert('Thành công', data.message);
       setPassword('');
       onGoLogin();
@@ -214,12 +306,26 @@ function RegisterScreen({ language, setLoading, onGoLogin }: { language: Preferr
         </View>
         <Text style={S.inputLabel}>Vai trò</Text>
         <View style={S.chipRow}>
-          {(['customer', 'driver'] as const).map(r => (
-            <TouchableOpacity key={r} onPress={() => setRole(r)} style={[S.chip, role === r && S.chipActive]}>
-              <Text style={[S.chipText, role === r && S.chipTextActive]}>{r === 'customer' ? 'Khách hàng' : 'Tài xế'}</Text>
-            </TouchableOpacity>
-          ))}
+          <TouchableOpacity style={[S.chip, role === 'customer' && S.chipActive]} onPress={() => setRole('customer')}><Text style={[S.chipText, role === 'customer' && S.chipTextActive]}>Khách hàng</Text></TouchableOpacity>
+          <TouchableOpacity style={[S.chip, role === 'driver' && S.chipActive]} onPress={() => setRole('driver')}><Text style={[S.chipText, role === 'driver' && S.chipTextActive]}>Tài xế</Text></TouchableOpacity>
         </View>
+
+        {role === 'driver' && (
+          <>
+            <View style={S.inputGroup}>
+              <Text style={S.inputLabel}>Biển số xe</Text>
+              <TextInput style={S.input} value={vehiclePlate} onChangeText={setVehiclePlate} placeholder="Ví dụ: 29A-12345" placeholderTextColor={Colors.gray400} />
+            </View>
+            <View style={S.inputGroup}>
+              <Text style={S.inputLabel}>Loại phương tiện</Text>
+              <View style={S.chipRow}>
+                <TouchableOpacity style={[S.chip, vehicleType === 'bike' && S.chipActive]} onPress={() => setVehicleType('bike')}><Text style={[S.chipText, vehicleType === 'bike' && S.chipTextActive]}>Xe máy</Text></TouchableOpacity>
+                <TouchableOpacity style={[S.chip, vehicleType === 'car' && S.chipActive]} onPress={() => setVehicleType('car')}><Text style={[S.chipText, vehicleType === 'car' && S.chipTextActive]}>Ô tô</Text></TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
+
         <TouchableOpacity style={S.primaryBtn} onPress={submit}>
           <Text style={S.primaryBtnText}>Đăng ký</Text>
         </TouchableOpacity>
@@ -375,4 +481,11 @@ const S = StyleSheet.create({
   avatarBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: Radius.full, borderWidth: 1.5, borderColor: Colors.gray300 },
   avatarBtnPrimary: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   avatarBtnText: { fontSize: 13, fontWeight: '600', color: Colors.gray700 },
+  // Mock Bar
+  mockBar: { backgroundColor: Colors.primaryDark, paddingVertical: 6, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  mockBarLabel: { color: Colors.white, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', opacity: 0.8 },
+  mockBtn: { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
+  mockBtnActive: { backgroundColor: Colors.white },
+  mockBtnText: { color: Colors.white, fontSize: 11, fontWeight: '600' },
+  mockBtnTextActive: { color: Colors.primaryDark },
 });

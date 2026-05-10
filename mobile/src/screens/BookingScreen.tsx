@@ -15,13 +15,13 @@ import { reverseGeocode } from '../utils/location';
 import { API_BASE_URL } from '../config';
 import { Colors, Spacing, Radius, Shadow } from '../theme';
 
-interface BookingScreenProps { token: string; }
+interface BookingScreenProps { token: string; mockLoc: { city: string, lat: number, lng: number } | null; }
 interface RegionHealthStatus { serviceLevel: 'full' | 'readonly' | 'unavailable'; warning: string | null; activeNode: string | null; }
 
 const REGION_LATITUDE_THRESHOLD = 16.5;
 function getRegionFromLatitude(lat: number): 'NORTH' | 'SOUTH' { return lat >= REGION_LATITUDE_THRESHOLD ? 'NORTH' : 'SOUTH'; }
 
-export default function BookingScreen({ token }: BookingScreenProps) {
+export default function BookingScreen({ token, mockLoc }: BookingScreenProps) {
   const mapRef = useRef<MapView | null>(null);
   const [pickup, setPickup] = useState<Point | null>(null);
   const [pickupAddress, setPickupAddress] = useState('Chưa chọn');
@@ -84,6 +84,11 @@ export default function BookingScreen({ token }: BookingScreenProps) {
   };
 
   const getCurrentLocation = async () => {
+    if (mockLoc) {
+      const point = { latitude: mockLoc.lat, longitude: mockLoc.lng };
+      setCurrentLocation(point);
+      return point;
+    }
     try {
       setLoadingLocation(true);
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -94,6 +99,23 @@ export default function BookingScreen({ token }: BookingScreenProps) {
     } catch { Alert.alert('Lỗi', 'Không lấy được vị trí'); return null; }
     finally { setLoadingLocation(false); }
   };
+
+  // Tự động nhảy vị trí khi chọn mockLoc từ thanh Demo
+  useEffect(() => {
+    if (mockLoc) {
+      const point = { latitude: mockLoc.lat, longitude: mockLoc.lng };
+      setPickup(point);
+      setCurrentLocation(point);
+      mapRef.current?.animateToRegion({
+        ...point,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      }, 500);
+      
+      // Lấy địa chỉ chữ cho vị trí giả lập
+      void reverseGeocode(point.latitude, point.longitude).then(setPickupAddress);
+    }
+  }, [mockLoc]);
 
   const useCurrentLocationAsPickup = async () => {
     const point = await getCurrentLocation();
@@ -147,6 +169,11 @@ export default function BookingScreen({ token }: BookingScreenProps) {
   const canBook = !!pickup && !!dropoff && !!token && !isReadOnly && !isBooking && !isCheckingHealth;
 
   const handleBookTrip = async () => {
+    console.log('[BookingAudit] Nút Đặt xe được nhấn');
+    console.log('[BookingAudit] Pickup:', pickup);
+    console.log('[BookingAudit] Dropoff:', dropoff);
+    console.log('[BookingAudit] Token exists:', !!token);
+    
     if (!pickup || !dropoff) { Alert.alert('Thông báo', 'Vui lòng chọn đủ điểm đón và điểm trả'); return; }
     if (!token) { Alert.alert('Lỗi', 'Bạn cần đăng nhập để đặt xe'); return; }
     if (isReadOnly) { Alert.alert('Không thể đặt xe', regionHealth.warning ?? 'Khu vực này đang bảo trì.'); return; }
@@ -217,7 +244,14 @@ export default function BookingScreen({ token }: BookingScreenProps) {
           onChangeMode={setMode} onBook={handleBookTrip} onClear={clearTrip}
           onSearchAddress={handleSearchAddress}
           bookDisabled={!canBook}
-          bookDisabledReason={isReadOnly ? (regionHealth.serviceLevel === 'unavailable' ? 'Khu vuc khong kha dung' : 'Che do chi doc') : undefined}
+          bookDisabledReason={
+            !token ? 'Chưa đăng nhập' :
+            !pickup ? 'Chưa chọn điểm đón' :
+            !dropoff ? 'Chưa chọn điểm trả' :
+            isCheckingHealth ? 'Đang kiểm tra vùng...' :
+            isReadOnly ? (regionHealth.serviceLevel === 'unavailable' ? 'Khu vực không khả dụng' : 'Chế độ chỉ đọc') :
+            undefined
+          }
         />
       </View>
     </SafeAreaView>

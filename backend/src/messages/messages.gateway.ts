@@ -16,12 +16,12 @@ import { AuthService } from '../auth/auth.service';
 import { SendMessageDto } from './dto/send-message.dto';
 
 interface TypingPayload {
-  trip_id: number;
+  trip_id: string;
   is_typing: boolean;
 }
 
 interface ReadPayload {
-  trip_id: number;
+  trip_id: string;
 }
 
 /**
@@ -56,7 +56,7 @@ export class MessagesGateway
   private readonly logger = new Logger(MessagesGateway.name);
 
   // Map socket.id → userId để biết ai đang kết nối
-  private connectedUsers = new Map<string, number>();
+  private connectedUsers = new Map<string, string>();
 
   constructor(
     private readonly messagesService: MessagesService,
@@ -84,10 +84,11 @@ export class MessagesGateway
       }
 
       const payload = this.authService.verifyToken(token);
-      this.connectedUsers.set(client.id, payload.sub);
+      const userId = payload.sub.toString();
+      this.connectedUsers.set(client.id, userId);
 
-      this.logger.log(`[${client.id}] User ${payload.sub} đã kết nối`);
-      client.emit('connected', { userId: payload.sub, message: 'Kết nối thành công' });
+      this.logger.log(`[${client.id}] User ${userId} đã kết nối`);
+      client.emit('connected', { userId, message: 'Kết nối thành công' });
     } catch {
       this.logger.warn(`[${client.id}] Token không hợp lệ`);
       client.emit('error', { message: 'Token không hợp lệ hoặc đã hết hạn' });
@@ -108,7 +109,7 @@ export class MessagesGateway
   @SubscribeMessage('join:trip')
   handleJoinTrip(
     @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { trip_id: number },
+    @MessageBody() payload: { trip_id: string },
   ) {
     const userId = this.connectedUsers.get(client.id);
     if (!userId) {

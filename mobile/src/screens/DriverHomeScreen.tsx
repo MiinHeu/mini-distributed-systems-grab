@@ -6,15 +6,15 @@ import { API_BASE_URL } from '../config';
 import { reverseGeocode } from '../utils/location';
 import { Colors, Spacing, Radius, Shadow } from '../theme';
 
-interface DriverInfo { id: string; user_id: number; vehicle_plate: string; vehicle_type: string; region: string; rating: number; total_trips: number; }
-interface Trip { id: number; pickup_address: string; dropoff_address: string; fare: number; status: string; customer_id: number; region: string; }
-interface DriverHomeScreenProps { token: string; userId: number; onOpenChat?: (tripId: number, receiverId: number, receiverName: string) => void; }
+interface DriverInfo { id: string; user_id: string; vehicle_plate: string; vehicle_type: string; region: string; rating: number; total_trips: number; }
+interface Trip { id: string; pickup_address: string; dropoff_address: string; fare: number; status: string; customer_id: string; region: string; }
+interface DriverHomeScreenProps { token: string; userId: string; onOpenChat?: (tripId: string, receiverId: string, receiverName: string) => void; }
 
 const VEHICLE_ICON: Record<string, string> = { bike: '🏍️', car: '🚗', truck: '🚛' };
 
-export default function DriverHomeScreen({ token, userId, onOpenChat }: DriverHomeScreenProps) {
+export default function DriverHomeScreen({ token, userId, onOpenChat, mockLoc }: DriverHomeScreenProps & { mockLoc: { lat: number, lng: number } | null }) {
   const [isAvailable, setIsAvailable] = useState(false);
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [location, setLocation] = useState<{ coords: { latitude: number, longitude: number } } | null>(null);
   const [driverInfo, setDriverInfo] = useState<DriverInfo | null>(null);
   const [pendingTrips, setPendingTrips] = useState<Trip[]>([]);
   const [isLoadingDriver, setIsLoadingDriver] = useState(true);
@@ -24,39 +24,87 @@ export default function DriverHomeScreen({ token, userId, onOpenChat }: DriverHo
   const locationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const api = axios.create({ baseURL: API_BASE_URL, headers: { Authorization: `Bearer ${token}` }, timeout: 8000 });
 
   useEffect(() => { loadDriverInfo(); return () => { stopLocationTracking(); stopPollingTrips(); }; }, []);
+  // Khi mockLoc thay đổi, cập nhật vị trí ngay lập tức nếu đang online
+  useEffect(() => { if (isAvailable) sendLocationUpdate(); }, [mockLoc]);
   useEffect(() => { if (isAvailable && driverInfo) startPollingTrips(); else stopPollingTrips(); }, [isAvailable, driverInfo]);
 
   const loadDriverInfo = async () => {
     setIsLoadingDriver(true);
+    let found = false;
     try {
       for (const region of ['NORTH', 'SOUTH']) {
         try {
-          const res = await api.get<{ data: DriverInfo[] }>(`/drivers/by-user/${userId}?region=${region}`);
-          const drivers = res.data?.data ?? [];
-          if (drivers.length > 0) { setDriverInfo(drivers[0]); setIsLoadingDriver(false); return; }
-        } catch {}
+          const res = await fetch(`${API_BASE_URL}/drivers/by-user/${userId}?region=${region}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const data = await res.json();
+          const drivers = data?.data ?? [];
+          
+          if (drivers.length > 0) { 
+            setDriverInfo(drivers[0]); 
+            found = true;
+            break; 
+          }
+        } catch (e) {
+          console.log(`Không tìm thấy tài xế ở vùng ${region}`);
+        }
       }
-    } catch {} finally { setIsLoadingDriver(false); }
+      if (!found) {
+        Alert.alert('Thông báo', 'Tài khoản của bạn chưa được đăng ký thông tin phương tiện (Driver Profile). Vui lòng liên hệ quản trị viên.');
+      }
+    } catch (e) {
+      Alert.alert('Lỗi', 'Không thể kết nối tới máy chủ');
+    } finally { 
+      setIsLoadingDriver(false); 
+    }
+  };
+
+  // Hàm hỗ trợ xác định vùng dựa trên tọa độ
+  const getCurrentRegionHelper = () => {
+    if (mockLoc) return mockLoc.lat > 16.5 ? 'NORTH' : 'SOUTH';
+    if (location) return location.coords.latitude > 16.5 ? 'NORTH' : 'SOUTH';
+    return driverInfo?.region || 'SOUTH';
   };
 
   const loadPendingTrips = async () => {
     if (!driverInfo) return;
-    try { const res = await api.get<{ trips: Trip[] }>(`/trips/pending?region=${driverInfo.region}`); setPendingTrips(res.data.trips || []); } catch {}
+    const currentRegion = getCurrentRegionHelper();
+    try { 
+      const res = await fetch(`${API_BASE_URL}/trips/pending?region=${currentRegion}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setPendingTrips(data.trips || []); 
+    } catch (e) {
+      console.log('Lỗi load trips:', e);
+    }
   };
 
   const startPollingTrips = () => { loadPendingTrips(); pollTimerRef.current = setInterval(loadPendingTrips, 5000); };
   const stopPollingTrips = () => { if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; } setPendingTrips([]); };
 
-  const handleAcceptTrip = async (tripId: number) => {
+  const handleAcceptTrip = async (tripId: string) => {
     try {
-      await api.patch(`/trips/${tripId}/accept`);
-      Alert.alert('Thành công!', 'Bạn đã nhận chuyến xe này!');
+      const res = await fetch(`${API_BASE_URL}/trips/${tripId}/accept`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (!res.ok) throw new Error('Không thể nhận chuyến');
+
+      // Tự động hoàn thành chuyến xe ngay lập tức theo yêu cầu
+      await fetch(`${API_BASE_URL}/trips/${tripId}/complete`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      Alert.alert('Thành công!', 'Bạn đã hoàn thành chuyến xe này!');
       loadPendingTrips();
-      if (onOpenChat) onOpenChat(tripId, 1, 'Khách hàng');
-    } catch (e: any) { Alert.alert('Lỗi', e?.response?.data?.message || 'Không thể nhận chuyến'); }
+    } catch (e: any) { 
+      Alert.alert('Lỗi', e.message || 'Không thể xử lý chuyến xe'); 
+    }
   };
 
   const toggleSwitch = async () => {
@@ -64,9 +112,27 @@ export default function DriverHomeScreen({ token, userId, onOpenChat }: DriverHo
     const newVal = !isAvailable;
     try {
       setIsAvailable(newVal);
-      await api.patch('/drivers/availability', { driver_id: driverInfo.id, is_available: newVal, region: driverInfo.region });
+      const res = await fetch(`${API_BASE_URL}/drivers/availability`, {
+        method: 'PATCH',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          driver_id: driverInfo.id, 
+          is_available: newVal, 
+          region: getCurrentRegionHelper() 
+        })
+      });
+      
+      if (!res.ok) throw new Error('Lỗi cập nhật trạng thái');
+      
       if (newVal) await startLocationTracking(); else stopLocationTracking();
-    } catch (e: any) { setIsAvailable(!newVal); stopLocationTracking(); Alert.alert('Lỗi cập nhật', e?.response?.data?.message || e.message); }
+    } catch (e: any) { 
+      setIsAvailable(!newVal); 
+      stopLocationTracking(); 
+      Alert.alert('Lỗi cập nhật', e.message); 
+    }
   };
 
   const startLocationTracking = async () => {
@@ -81,16 +147,43 @@ export default function DriverHomeScreen({ token, userId, onOpenChat }: DriverHo
   const sendLocationUpdate = async () => {
     if (!driverInfo) return;
     try {
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setLocation(loc);
-      const addr = await reverseGeocode(loc.coords.latitude, loc.coords.longitude);
+      let lat: number, lng: number;
+
+      if (mockLoc) {
+        lat = mockLoc.lat;
+        lng = mockLoc.lng;
+      } else {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        lat = loc.coords.latitude;
+        lng = loc.coords.longitude;
+      }
+
+      setLocation({ coords: { latitude: lat, longitude: lng } });
+      const addr = await reverseGeocode(lat, lng);
       setCurrentAddress(addr);
-      await api.patch('/drivers/location', { driver_id: driverInfo.id, latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      
+      await fetch(`${API_BASE_URL}/drivers/location`, {
+        method: 'PATCH',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          driver_id: driverInfo.id, 
+          latitude: lat, 
+          longitude: lng 
+        })
+      });
+      
       setLastUpdateTime(new Date().toLocaleTimeString('vi-VN'));
-    } catch {}
+    } catch (err) {
+      console.log('Lỗi cập nhật vị trí driver:', err);
+    }
   };
 
   if (isLoadingDriver) return <View style={S.centered}><ActivityIndicator size="large" color={Colors.primary} /></View>;
+
+  const currentRegion = getCurrentRegionHelper();
 
   return (
     <ScrollView style={S.container} refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={async () => { setIsRefreshing(true); await loadPendingTrips(); setIsRefreshing(false); }} colors={[Colors.primary]} />}>
@@ -105,22 +198,30 @@ export default function DriverHomeScreen({ token, userId, onOpenChat }: DriverHo
             </View>
           </View>
           <View style={S.infoCardRight}>
-            <View style={S.regionBadge}><Text style={S.regionBadgeText}>{driverInfo.region === 'NORTH' ? 'Miền Bắc' : 'Miền Nam'}</Text></View>
-            <Text style={S.ratingText}>{driverInfo.rating.toFixed(1)} sao  {driverInfo.total_trips} chuyến</Text>
+            <View style={[S.regionBadge, { backgroundColor: currentRegion === 'NORTH' ? '#E3F2FD' : '#F1F8E9', paddingHorizontal: 8 }]}>
+              <Text style={[S.regionBadgeText, { color: currentRegion === 'NORTH' ? '#1976D2' : '#388E3C', fontSize: 11 }]}>
+                Đang ở: {currentRegion === 'NORTH' ? 'Miền Bắc' : 'Miền Nam'}
+              </Text>
+            </View>
+            <Text style={S.ratingText}>{Number(driverInfo.rating ?? 5).toFixed(1)} sao  {driverInfo.total_trips} chuyến</Text>
           </View>
         </View>
       )}
 
       {/* Status toggle */}
-      <View style={[S.statusCard, isAvailable && S.statusCardActive]}>
+      <View style={[S.statusCard, isAvailable && S.statusCardActive, !driverInfo && { opacity: 0.5 }]}>
         <View style={S.statusLeft}>
           <View style={[S.statusDot, { backgroundColor: isAvailable ? Colors.primary : Colors.gray300 }]} />
           <View>
             <Text style={S.statusTitle}>{isAvailable ? 'Đang sẵn sàng đón khách' : 'Đang nghỉ'}</Text>
-            <Text style={S.statusSub}>{isAvailable ? 'Bạn đang nhận chuyến' : 'Bật để bắt đầu nhận chuyến'}</Text>
+            <Text style={S.statusSub}>
+              {driverInfo 
+                ? (isAvailable ? 'Bạn đang nhận chuyến' : 'Bật để bắt đầu nhận chuyến') 
+                : 'Thiếu hồ sơ phương tiện - Vui lòng liên hệ Admin'}
+            </Text>
           </View>
         </View>
-        <Switch value={isAvailable} onValueChange={toggleSwitch} trackColor={{ false: Colors.gray200, true: Colors.primaryLight }} thumbColor={isAvailable ? Colors.primary : Colors.gray400} />
+        <Switch value={isAvailable} onValueChange={toggleSwitch} trackColor={{ false: Colors.gray200, true: Colors.primaryLight }} thumbColor={isAvailable ? Colors.primary : Colors.gray400} disabled={!driverInfo} />
       </View>
 
       {/* Location card */}

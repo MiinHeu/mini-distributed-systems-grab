@@ -25,7 +25,7 @@ export class MessagesController {
    */
   @Get('unread/count')
   async countUnread(@Req() req: RequestWithUser) {
-    return this.messagesService.countUnread(req.user.userId);
+    return this.messagesService.countUnread(req.user.userId.toString());
   }
 
   /**
@@ -34,7 +34,7 @@ export class MessagesController {
    */
   @Get(':trip_id')
   async getMessagesByTrip(
-    @Param('trip_id', ParseIntPipe) tripId: number,
+    @Param('trip_id') tripId: string,
   ) {
     const result = await this.messagesService.getMessagesByTrip(tripId);
     return {

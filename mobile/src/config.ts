@@ -21,7 +21,7 @@
  */
 
 // ⚠️ ĐỔI GIÁ TRỊ NÀY THÀNH IP LAN CỦA MÁY TÍNH KHI TEST TRÊN ĐIỆN THOẠI THẬT
-export const API_HOST = process.env.EXPO_PUBLIC_API_HOST ?? 'localhost';
+export const API_HOST = process.env.EXPO_PUBLIC_API_HOST ?? '172.16.0.102';
 
 export const API_BASE_URL = `http://${API_HOST}:3000`;
 export const WS_BASE_URL = `http://${API_HOST}:3000`;

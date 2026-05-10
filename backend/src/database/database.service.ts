@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Pool, QueryResult, QueryResultRow } from 'pg';
 import { Region } from '../common/location.utils';
+import { getSnowflake, Snowflake } from '../common/snowflake';
 
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
@@ -18,6 +19,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   southReplica: Pool;
 
   private pools: Record<Region, { primary: Pool; replica: Pool }>;
+  private snowflake: Snowflake;
 
   constructor() {
     const user = process.env.POSTGRES_USER || 'postgres';
@@ -68,6 +70,14 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       [Region.NORTH]: { primary: this.northPrimary, replica: this.northReplica },
       [Region.SOUTH]: { primary: this.southPrimary, replica: this.southReplica },
     };
+
+    const nodeId = Number(process.env.NODE_ID || 1);
+    this.snowflake = getSnowflake(nodeId);
+    this.logger.log(`[Snowflake Init] Khởi tạo bộ sinh ID với Node ID: ${nodeId}`);
+  }
+
+  public generateId(): string {
+    return this.snowflake.nextId();
   }
 
   async queryWithFailover<T extends QueryResultRow = any>(
@@ -95,6 +105,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       }
 
       try {
+        console.warn(`[Failover] ${region} Primary lỗi. Đang tự động chuyển hướng truy vấn sang REPLICA...`);
         const result = await regionPools.replica.query<T>(queryText, values);
         return { result, isReadOnly: true };
       } catch (replicaError: any) {

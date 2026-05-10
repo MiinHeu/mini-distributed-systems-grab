@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Logger, Param, ParseIntPipe, Patch, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Logger, Param, ParseIntPipe, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { DriversService } from './drivers.service';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
@@ -38,9 +38,11 @@ export class DriversController {
   @UseGuards(JwtAuthGuard)
   @Get('by-user/:userId')
   async getDriversByUserId(
-    @Param('userId', ParseIntPipe) userId: number,
+    @Req() req: any,
+    @Param('userId') userIdParam: string,
     @Query('region') region?: string,
   ) {
+    const userId = (req.user.userId || req.user.id).toString();
     const resolvedRegion = (region as Region) ?? Region.NORTH;
     const data = await this.driversService.getDriversByUserId(userId, resolvedRegion);
     return ok(data);

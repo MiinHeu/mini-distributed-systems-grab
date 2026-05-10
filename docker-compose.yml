@@ -14,12 +14,8 @@ services:
       - "5534:5432"
     volumes:
       - south_primary_data:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d
-    command: |
-      postgres
-      -c wal_level=replica
-      -c max_wal_senders=3
-      -c wal_keep_size=64
+      - ./database:/docker-entrypoint-initdb.d
+    command: postgres -c wal_level=replica -c max_wal_senders=3 -c wal_keep_size=64 -c cluster.region=SOUTH
 
   # ========== SOUTH REPLICA ==========
   south-replica:
@@ -60,12 +56,8 @@ services:
       - "5532:5432"
     volumes:
       - north_primary_data:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d
-    command: |
-      postgres
-      -c wal_level=replica
-      -c max_wal_senders=3
-      -c wal_keep_size=64
+      - ./database:/docker-entrypoint-initdb.d
+    command: postgres -c wal_level=replica -c max_wal_senders=3 -c wal_keep_size=64 -c cluster.region=NORTH
 
   # ========== NORTH REPLICA ==========
   north-replica:
@@ -219,6 +211,13 @@ services:
       - "9190:9187"
     depends_on:
       - south-replica
+
+  adminer:
+    image: adminer:latest
+    container_name: adminer
+    ports:
+      - "8080:8080"
+    restart: always
 
 volumes:
   south_primary_data:

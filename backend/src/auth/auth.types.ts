@@ -2,7 +2,7 @@ export type UserRole = 'customer' | 'driver' | 'admin';
 export type PreferredLanguage = 'vi' | 'en';
 
 export type AuthUser = {
-  id: number;
+  id: string;
   name: string;
   phone: string;
   email: string;
@@ -14,7 +14,7 @@ export type AuthUser = {
 };
 
 export type JwtPayload = {
-  sub: number;
+  sub: string;
   role: UserRole;
   email: string;
   iat?: number;
@@ -22,7 +22,7 @@ export type JwtPayload = {
 };
 
 export type RequestUser = {
-  userId: number;
+  userId: string;
   role: UserRole;
   email: string;
 };

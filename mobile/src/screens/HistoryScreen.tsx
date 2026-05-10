@@ -4,7 +4,7 @@ import axios from 'axios';
 import { API_BASE_URL } from '../config';
 import { Colors, Spacing, Radius, Shadow } from '../theme';
 
-interface TripHistory { id: number; status: string; pickup_address: string; dropoff_address: string; fare: number; created_at: string; driver_name: string | null; region?: string; }
+interface TripHistory { id: string; status: string; pickup_address: string; dropoff_address: string; fare: number; created_at: string; driver_name: string | null; region?: string; }
 interface HistoryResponse { readOnly: boolean; warning: string | null; activeNode: string; data: TripHistory[]; }
 interface HistoryScreenProps { token: string; }
 

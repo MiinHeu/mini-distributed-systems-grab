@@ -13,12 +13,12 @@ import { Trip } from './entities/trip.entity';
 type TripStatus = 'pending' | 'accepted' | 'completed' | 'cancelled';
 
 interface JoinTripPayload {
-  tripId: number;
+  tripId: string;
 }
 
 interface DriverLocationPayload {
-  tripId: number;
-  driverId: number;
+  tripId: string;
+  driverId: string;
   latitude: number;
   longitude: number;
   heading?: number;
@@ -26,9 +26,9 @@ interface DriverLocationPayload {
 }
 
 interface TripStatusPayload {
-  tripId: number;
+  tripId: string;
   status: TripStatus;
-  trip?: Trip;
+  trip?: any;
   message?: string;
 }
 
@@ -81,9 +81,10 @@ export class TripsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return event;
   }
 
-  emitTripAccepted(trip: Trip) {
-    this.server.to(this.getTripRoom(trip.id)).emit('trip:accepted', {
-      tripId: trip.id,
+  emitTripAccepted(trip: any) {
+    const tripId = trip.id.toString();
+    this.server.to(this.getTripRoom(tripId)).emit('trip:accepted', {
+      tripId: tripId,
       driverId: trip.driver_id,
       trip,
       sentAt: new Date().toISOString(),
@@ -97,7 +98,7 @@ export class TripsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
-  private getTripRoom(tripId: number) {
+  private getTripRoom(tripId: string) {
     return `trip:${tripId}`;
   }
 }

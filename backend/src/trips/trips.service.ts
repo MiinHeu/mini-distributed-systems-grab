@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -14,6 +15,7 @@ import { DbRoutingService } from '../db-routing/db-routing.service';
 
 @Injectable()
 export class TripsService {
+  private readonly logger = new Logger(TripsService.name);
   constructor(
     private readonly database: DatabaseService,
     private readonly httpService: HttpService,
@@ -35,7 +37,7 @@ export class TripsService {
     return result.result.rows[0];
   }
 
-  async getTripById(id: number) {
+  async getTripById(id: string) {
     // Thử cả 2 region
     for (const region of [Region.SOUTH, Region.NORTH]) {
       try {
@@ -51,7 +53,7 @@ export class TripsService {
     return null;
   }
 
-  async cancelTrip(id: number, userId?: number) {
+  async cancelTrip(id: string, userId?: string) {
     // Nếu có userId, tìm trip theo region và kiểm tra quyền
     if (userId !== undefined) {
       const region = await this.findTripRegion(id);
@@ -100,7 +102,7 @@ export class TripsService {
     return { trips: result.rows, isReadOnly };
   }
 
-  async acceptTrip(tripId: number, userId: number) {
+  async acceptTrip(tripId: string, userId: string) {
     const region = await this.findTripRegion(tripId);
 
     // Tìm driver_id (UUID) của user này trong vùng tương ứng
@@ -152,7 +154,7 @@ export class TripsService {
     }
   }
 
-  async completeTrip(tripId: number, userId: number) {
+  async completeTrip(tripId: string, userId: string) {
     const region = await this.findTripRegion(tripId);
 
     // Tìm driver_id (UUID) của user này
@@ -184,13 +186,21 @@ export class TripsService {
         throw new NotFoundException('Không tìm thấy chuyến đang được nhận bởi tài xế này');
       }
 
-      // 2. Giải phóng tài xế thành RẢNH
-      await this.database.queryWithFailover(
-        region,
-        `UPDATE drivers SET is_available = true WHERE id = $1`,
-        [driverId],
-        true,
-      );
+      // 2. Cập nhật hồ sơ tài xế trên TOÀN HỆ THỐNG (Replication)
+      // Giải phóng tài xế thành RẢNH và tăng tổng số chuyến xe đã hoàn thành
+      const allRegions = [Region.NORTH, Region.SOUTH];
+      for (const r of allRegions) {
+        try {
+          await this.database.queryWithFailover(
+            r,
+            `UPDATE drivers SET is_available = true, total_trips = COALESCE(total_trips, 0) + 1 WHERE id = $1`,
+            [driverId],
+            true,
+          );
+        } catch (err) {
+          // Bỏ qua lỗi tại các vùng đang sập để đảm bảo tính sẵn sàng cao
+        }
+      }
 
       return result.rows[0];
     } catch (error) {
@@ -199,7 +209,7 @@ export class TripsService {
     }
   }
 
-  async rejectTrip(tripId: number, userId: number) {
+  async rejectTrip(tripId: string, userId: string) {
     const region = await this.findTripRegion(tripId);
 
     const driverRes = await this.database.queryWithFailover(
@@ -243,7 +253,7 @@ export class TripsService {
     };
   }
 
-  async getTripHistory(userId: number) {
+  async getTripHistory(userId: string) {
     const query = `
       SELECT
         t.id, t.status, t.pickup_address, t.dropoff_address, t.fare, t.created_at, t.region,
@@ -264,6 +274,8 @@ export class TripsService {
     const allTrips = [...northRes.result.rows, ...southRes.result.rows].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
+
+    console.log(`[HistoryAudit] userId: ${userId}, north: ${northRes.result.rows.length}, south: ${southRes.result.rows.length}, total: ${allTrips.length}`);
 
     const isReadOnly = northRes.isReadOnly || southRes.isReadOnly;
 
@@ -295,23 +307,25 @@ export class TripsService {
     };
   }
 
-  async getTripHistoryAdmin(userId: number) {
+  async getTripHistoryAdmin(userId: string) {
     return this.getTripHistory(userId);
   }
 
-  async bookTrip(body: any, userId: number) {
+  async bookTrip(body: any, userId: string) {
     const ctx = this.dbRouting.getWriteContext(body.pickup_lat);
 
-    const { result } = await this.database.queryWithFailover(
+    const tripId = this.database.generateId();
+    const { result } = await this.database.queryWithFailover<any>(
       ctx.region,
       `INSERT INTO trips (
-        customer_id, status, pickup_address, dropoff_address, 
+        id, customer_id, status, pickup_address, dropoff_address, 
         pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, 
         fare, region
       )
-      VALUES ($1, 'pending', $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *`,
       [
+        tripId,
         userId,
         body.pickup || 'Unknown',
         body.dropoff || 'Unknown',
@@ -338,7 +352,7 @@ export class TripsService {
     return regionRaw === Region.NORTH ? Region.NORTH : Region.SOUTH;
   }
 
-  private async findTripRegion(tripId: number): Promise<Region> {
+  private async findTripRegion(tripId: string): Promise<Region> {
     for (const region of [Region.SOUTH, Region.NORTH]) {
       const { result } = await this.database.queryWithFailover<{ region: Region }>(
         region,
@@ -385,8 +399,29 @@ export class TripsService {
         route: route.geometry,
       };
     } catch (error) {
-      if (error instanceof BadRequestException) throw error;
-      throw new BadRequestException('Không thể kết nối đến dịch vụ tính đường đi');
+      console.error('[Estimate] Lỗi OSRM, dùng dữ liệu MOCK dự phòng:', error.message);
+      // Dữ liệu MOCK dự phòng khi dịch vụ bản đồ sập
+      const distance_km = 5.5; 
+      const duration_minutes = 15;
+      const base_fare = 10000;
+      const price_per_km = 5000;
+      const estimated_fare = Math.round(base_fare + distance_km * price_per_km);
+
+      return {
+        distance_km,
+        estimated_fare,
+        duration_minutes,
+        failover: true,
+        route: {
+          type: 'LineString',
+          coordinates: [
+            [pickup_lng, pickup_lat],
+            [pickup_lng + (dropoff_lng - pickup_lng) * 0.3, pickup_lat + (dropoff_lat - pickup_lat) * 0.4],
+            [pickup_lng + (dropoff_lng - pickup_lng) * 0.7, pickup_lat + (dropoff_lat - pickup_lat) * 0.6],
+            [dropoff_lng, dropoff_lat]
+          ]
+        },
+      };
     }
   }
 }

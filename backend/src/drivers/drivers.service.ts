@@ -172,7 +172,7 @@ export class DriversService {
    * Tìm tất cả driver records của 1 user_id trong 1 region
    * Dùng cho mobile: sau khi login, tìm driver_id của mình
    */
-  async getDriversByUserId(userId: number, regionRaw?: string) {
+  async getDriversByUserId(userId: string, regionRaw?: string) {
     const query = `
       SELECT id, user_id, vehicle_plate, vehicle_type, is_available,
              latitude, longitude, region, rating, total_trips

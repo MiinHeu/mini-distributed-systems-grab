@@ -5,9 +5,9 @@ import { SendMessageDto } from './dto/send-message.dto';
 
 export interface Message {
   id: string;
-  trip_id: number;
-  sender_id: number;
-  receiver_id: number;
+  trip_id: string;
+  sender_id: string;
+  receiver_id: string;
   content: string;
   type: 'text' | 'image';
   is_read: boolean;
@@ -23,7 +23,7 @@ export class MessagesService {
   /**
    * Lấy region của trip để biết query vào DB nào
    */
-  private async getTripRegion(tripId: number): Promise<Region> {
+  private async getTripRegion(tripId: string): Promise<Region> {
     // Thử NORTH trước, nếu không có thì SOUTH
     try {
       const res = await this.db.queryWithFailover(
@@ -60,15 +60,16 @@ export class MessagesService {
   /**
    * Gửi tin nhắn mới — lưu vào DB theo region của trip
    */
-  async sendMessage(senderId: number, dto: SendMessageDto): Promise<Message> {
-    const region = await this.getTripRegion(dto.trip_id);
+  async sendMessage(senderId: string, dto: SendMessageDto): Promise<Message> {
+    const region = await this.getTripRegion(dto.trip_id.toString());
+    const messageId = this.db.generateId();
 
     const query = `
-      INSERT INTO messages (trip_id, sender_id, receiver_id, content, type)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO messages (id, trip_id, sender_id, receiver_id, content, type)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `;
-    const values = [dto.trip_id, senderId, dto.receiver_id, dto.content, dto.type ?? 'text'];
+    const values = [messageId, dto.trip_id, senderId, dto.receiver_id, dto.content, dto.type ?? 'text'];
 
     const { result } = await this.db.queryWithFailover(region, query, values, true);
     return result.rows[0] as Message;
@@ -77,7 +78,7 @@ export class MessagesService {
   /**
    * Lấy lịch sử chat của 1 chuyến
    */
-  async getMessagesByTrip(tripId: number): Promise<{
+  async getMessagesByTrip(tripId: string): Promise<{
     data: Message[];
     total: number;
     readOnly: boolean;
@@ -108,7 +109,7 @@ export class MessagesService {
   /**
    * Đánh dấu tin nhắn đã đọc
    */
-  async markAsRead(tripId: number, receiverId: number): Promise<{ updated: number }> {
+  async markAsRead(tripId: string, receiverId: string): Promise<{ updated: number }> {
     const region = await this.getTripRegion(tripId);
 
     const query = `
@@ -126,7 +127,7 @@ export class MessagesService {
   /**
    * Đếm tin nhắn chưa đọc của 1 user
    */
-  async countUnread(userId: number): Promise<{ unread_count: number }> {
+  async countUnread(userId: string): Promise<{ unread_count: number }> {
     // Query cả 2 region và cộng lại
     let total = 0;
 

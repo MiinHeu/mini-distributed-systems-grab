@@ -167,7 +167,7 @@ function App() {
             </select>
             {user?.role === 'admin' && (
               <>
-                <Link to="/admin">Admin</Link>
+                <Link to="/management">Admin</Link>
                 <Link to="/dashboard">Dashboard</Link>
                 <Link to="/monitor">Monitor</Link>
               </>
@@ -201,7 +201,7 @@ function App() {
             <Route path="/profile" element={<RequireAuth token={token} fallback={labels.authRequired}><ProfilePage language={language} token={token} /></RequireAuth>} />
             <Route path="/monitor" element={<SystemMonitor />} />
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/management" element={<AdminDashboard />} />
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </main>
