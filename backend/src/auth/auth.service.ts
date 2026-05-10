@@ -3,10 +3,12 @@ import {
   ConflictException,
   Injectable,
   UnauthorizedException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { compare, hash } from 'bcryptjs';
 import { sign, verify } from 'jsonwebtoken';
+import { Region } from '../common/location.utils';
 import {
   AuthUser,
   JwtPayload,
@@ -45,10 +47,10 @@ export class AuthService {
 
   private readonly messages = {
     vi: {
-      registered: 'Dang ky thanh cong',
-      loggedIn: 'Dang nhap thanh cong',
-      loggedOut: 'Dang xuat thanh cong',
-      avatarUploaded: 'Tai anh dai dien thanh cong',
+      registered: 'Đăng ký thành công',
+      loggedIn: 'Đăng nhập thành công',
+      loggedOut: 'Đăng xuất thành công',
+      avatarUploaded: 'Tải ảnh đại diện thành công',
     },
     en: {
       registered: 'Register successfully',
@@ -126,9 +128,7 @@ export class AuthService {
     const password = input.password;
 
     if (!name || !phone || !email || !password) {
-      throw new BadRequestException(
-        'name, phone, email, password are required',
-      );
+      throw new BadRequestException('name, phone, email, password are required');
     }
 
     if (password.length < 6) {
@@ -137,33 +137,60 @@ export class AuthService {
 
     const normalizedEmail = this.normalizeEmail(email);
     const role = this.normalizeRole(input.role);
-    const preferredLanguage = this.normalizePreferredLanguage(
-      input.preferred_language,
-    );
+    const preferredLanguage = this.normalizePreferredLanguage(input.preferred_language);
 
-    const existed = await this.database.northPrimary.query(
-      'SELECT id FROM users WHERE email = $1 LIMIT 1',
-      [normalizedEmail],
-    );
+    // 1. Kiểm tra tồn tại trên CẢ 2 vùng để tránh trùng lặp tài khoản
+    let existed = false;
+    for (const r of [Region.NORTH, Region.SOUTH]) {
+      try {
+        console.log(`[AuthAudit] Đang thử đăng ký tại vùng: ${r}`);
+        const { result } = await this.database.queryWithFailover(
+          r,
+          'SELECT id FROM users WHERE email = $1 LIMIT 1',
+          [normalizedEmail],
+          false,
+        );
+        if (result && (result.rowCount ?? 0) > 0) { existed = true; break; }
+      } catch (e) { /* Bỏ qua vùng đang sập */ }
+    }
 
-    if (existed.rowCount) {
-      throw new ConflictException('email already exists');
+    if (existed) {
+      throw new ConflictException('Email này đã được đăng ký trong hệ thống.');
     }
 
     const passwordHash = await hash(password, 10);
 
-    const created = await this.database.northPrimary.query(
-      `INSERT INTO users(name, phone, email, password, role, preferred_language)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING ${this.userSelectColumns}`,
-      [name, phone, normalizedEmail, passwordHash, role, preferredLanguage],
-    );
+    // 2. Cố gắng ghi vào vùng NORTH (mặc định), nếu hỏng thì thử SOUTH
+    let created: any = null;
+    let targetRegion: Region = Region.NORTH;
 
-    const user = this.sanitizeUser(created.rows[0]);
+    for (const r of [Region.NORTH, Region.SOUTH]) {
+      try {
+        console.log(`[AuthAudit] Đang thử đăng ký tại vùng: ${r}`);
+        const { result } = await this.database.queryWithFailover(
+          r,
+          `INSERT INTO users(name, phone, email, password, role, preferred_language)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING ${this.userSelectColumns}`,
+          [name, phone, normalizedEmail, passwordHash, role, preferredLanguage],
+          true,
+        );
+        created = result.rows[0];
+        targetRegion = r;
+        console.log(`[AuthAudit] Đăng ký thành công tại: ${r}`);
+        break;
+      } catch (e: any) {
+        console.warn(`[AuthAudit] Đăng ký tại ${r} thất bại: ${e.message || JSON.stringify(e)}`);
+        if (r === Region.SOUTH) throw e;
+      }
+    }
+
+    if (!created) throw new ServiceUnavailableException('Không thể tạo tài khoản vào lúc này.');
+    const user = this.sanitizeUser(created);
     const lang = user.preferred_language;
 
     return {
-      message: this.messages[lang].registered,
+      message: `${this.messages[lang].registered} (${targetRegion === Region.NORTH ? 'Miền Bắc' : 'Miền Nam'})`,
       user,
     };
   }
@@ -177,32 +204,43 @@ export class AuthService {
     }
 
     const normalizedEmail = this.normalizeEmail(email);
+    let row: any = null;
+    let foundInRegion: Region | null = null;
 
-    const found = await this.database.northPrimary.query(
-      `SELECT ${this.userSelectColumns}, password
-       FROM users
-       WHERE email = $1
-       LIMIT 1`,
-      [normalizedEmail],
-    );
+    // Tìm user trên CẢ 2 vùng (Ưu tiên vùng đang sống)
+    for (const r of [Region.NORTH, Region.SOUTH]) {
+      try {
+        console.log(`[AuthAudit] Đang tìm user tại vùng: ${r}`);
+        const { result } = await this.database.queryWithFailover(
+          r,
+          `SELECT ${this.userSelectColumns}, password
+           FROM users WHERE email = $1 LIMIT 1`,
+          [normalizedEmail],
+          false,
+        );
+        if (result && result.rows[0]) {
+          row = result.rows[0];
+          foundInRegion = r;
+          console.log(`[AuthAudit] Đã tìm thấy user tại: ${r}`);
+          break;
+        }
+      } catch (e: any) {
+        console.warn(`[AuthAudit] Tìm user tại ${r} thất bại: ${e.message || JSON.stringify(e)}`);
+      }
+    }
 
-    const row = found.rows[0];
     if (!row) {
-      throw new UnauthorizedException('invalid credentials');
+      throw new UnauthorizedException('Thông tin đăng nhập không chính xác hoặc tài khoản không tồn tại.');
     }
 
     const passwordMatched = await compare(password, String(row.password ?? ''));
     if (!passwordMatched) {
-      throw new UnauthorizedException('invalid credentials');
+      throw new UnauthorizedException('Thông tin đăng nhập không chính xác.');
     }
 
     const user = this.sanitizeUser(row);
     const token = sign(
-      {
-        sub: user.id,
-        role: user.role,
-        email: user.email,
-      },
+      { sub: user.id, role: user.role, email: user.email },
       this.getJwtSecret(),
       { expiresIn: '7d' },
     );
@@ -210,7 +248,7 @@ export class AuthService {
     const lang = this.resolveLanguage(languageRaw, user.preferred_language);
 
     return {
-      message: this.messages[lang].loggedIn,
+      message: `${this.messages[lang].loggedIn} (${foundInRegion === Region.NORTH ? 'Bắc' : 'Nam'})`,
       token,
       user,
     };
@@ -251,20 +289,18 @@ export class AuthService {
   }
 
   async me(requestUser: RequestUser) {
-    const found = await this.database.northReplica.query(
-      `SELECT ${this.userSelectColumns}
-       FROM users
-       WHERE id = $1
-       LIMIT 1`,
-      [requestUser.userId],
-    );
-
-    const row = found.rows[0];
-    if (!row) {
-      throw new UnauthorizedException('user not found');
+    for (const r of [Region.NORTH, Region.SOUTH]) {
+      try {
+        const { result: found } = await this.database.queryWithFailover(
+          r,
+          `SELECT ${this.userSelectColumns} FROM users WHERE id = $1 LIMIT 1`,
+          [requestUser.userId],
+          false,
+        );
+        if (found.rows[0]) return this.sanitizeUser(found.rows[0]);
+      } catch (e) {}
     }
-
-    return this.sanitizeUser(row);
+    throw new UnauthorizedException('Không tìm thấy người dùng trên hệ thống.');
   }
 
   async patchMe(requestUser: RequestUser, input: PatchProfileInput) {
@@ -276,82 +312,46 @@ export class AuthService {
       updates.push(`${column} = $${values.length}`);
     };
 
-    if (typeof input.name === 'string' && input.name.trim()) {
-      pushUpdate('name', input.name.trim());
-    }
+    if (typeof input.name === 'string' && input.name.trim()) pushUpdate('name', input.name.trim());
+    if (typeof input.phone === 'string' && input.phone.trim()) pushUpdate('phone', input.phone.trim());
+    if (typeof input.email === 'string' && input.email.trim()) pushUpdate('email', this.normalizeEmail(input.email));
+    if (typeof input.avatar_url === 'string' && input.avatar_url.trim()) pushUpdate('avatar_url', input.avatar_url.trim());
+    if (input.preferred_language === 'vi' || input.preferred_language === 'en') pushUpdate('preferred_language', input.preferred_language);
 
-    if (typeof input.phone === 'string' && input.phone.trim()) {
-      pushUpdate('phone', input.phone.trim());
-    }
-
-    if (typeof input.email === 'string' && input.email.trim()) {
-      pushUpdate('email', this.normalizeEmail(input.email));
-    }
-
-    if (typeof input.avatar_url === 'string' && input.avatar_url.trim()) {
-      pushUpdate('avatar_url', input.avatar_url.trim());
-    }
-
-    if (
-      input.preferred_language === 'vi' ||
-      input.preferred_language === 'en'
-    ) {
-      pushUpdate('preferred_language', input.preferred_language);
-    }
-
-    if (!updates.length) {
-      throw new BadRequestException('no valid field provided for update');
-    }
+    if (!updates.length) throw new BadRequestException('Không có trường nào để cập nhật');
 
     pushUpdate('updated_at', new Date());
-
     values.push(requestUser.userId);
 
-    const query = `UPDATE users
-      SET ${updates.join(', ')}
-      WHERE id = $${values.length}
-      RETURNING ${this.userSelectColumns}`;
+    const query = `UPDATE users SET ${updates.join(', ')} WHERE id = $${values.length} RETURNING ${this.userSelectColumns}`;
 
-    try {
-      const updated = await this.database.northPrimary.query(query, values);
-
-      if (!updated.rows[0]) {
-        throw new UnauthorizedException('user not found');
+    for (const r of [Region.NORTH, Region.SOUTH]) {
+      try {
+        const { result: updated } = await this.database.queryWithFailover(r, query, values, true);
+        if (updated.rows[0]) return this.sanitizeUser(updated.rows[0]);
+      } catch (e) {
+        if (r === Region.SOUTH) throw e;
       }
-
-      return this.sanitizeUser(updated.rows[0]);
-    } catch (error) {
-      if (error instanceof UnauthorizedException) {
-        throw error;
-      }
-      throw new BadRequestException('failed to update profile');
     }
+    throw new UnauthorizedException('Không thể cập nhật hồ sơ.');
   }
 
-  async updateAvatar(
-    requestUser: RequestUser,
-    avatarUrl: string,
-    languageRaw?: string | null,
-  ) {
-    const updated = await this.database.northPrimary.query(
-      `UPDATE users
-       SET avatar_url = $1, updated_at = NOW()
-       WHERE id = $2
-       RETURNING ${this.userSelectColumns}`,
-      [avatarUrl, requestUser.userId],
-    );
-
-    if (!updated.rows[0]) {
-      throw new UnauthorizedException('user not found');
+  async updateAvatar(requestUser: RequestUser, avatarUrl: string, languageRaw?: string | null) {
+    const query = `UPDATE users SET avatar_url = $1, updated_at = NOW() WHERE id = $2 RETURNING ${this.userSelectColumns}`;
+    
+    for (const r of [Region.NORTH, Region.SOUTH]) {
+      try {
+        const { result: updated } = await this.database.queryWithFailover(r, query, [avatarUrl, requestUser.userId], true);
+        if (updated.rows[0]) {
+          const user = this.sanitizeUser(updated.rows[0]);
+          const lang = this.resolveLanguage(languageRaw, user.preferred_language);
+          return { message: this.messages[lang].avatarUploaded, user };
+        }
+      } catch (e) {
+        if (r === Region.SOUTH) throw e;
+      }
     }
-
-    const user = this.sanitizeUser(updated.rows[0]);
-    const lang = this.resolveLanguage(languageRaw, user.preferred_language);
-
-    return {
-      message: this.messages[lang].avatarUploaded,
-      user,
-    };
+    throw new UnauthorizedException('Không thể cập nhật ảnh đại diện.');
   }
 
   logout(token: string, languageRaw?: string | null) {
