@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Auth + Da ngon ngu + Upload anh - Diagrams</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+        background: #f5f6f8;
+        color: #1f2a37;
+      }
+      header {
+        background: #0f172a;
+        color: #ffffff;
+        padding: 20px 24px;
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      section {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 18px 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+      }
+      h1 {
+        margin: 0 0 6px 0;
+        font-size: 24px;
+      }
+      h2 {
+        margin: 0 0 12px 0;
+        font-size: 18px;
+      }
+      p,
+      li {
+        line-height: 1.5;
+      }
+      .note {
+        background: #fef3c7;
+        border: 1px solid #f59e0b;
+        color: #7c4a03;
+        padding: 10px 12px;
+        border-radius: 8px;
+      }
+      .mermaid {
+        background: #f9fafb;
+        border: 1px dashed #cbd5e1;
+        border-radius: 10px;
+        padding: 12px;
+        overflow-x: auto;
+      }
+      code {
+        background: #f1f5f9;
+        padding: 2px 6px;
+        border-radius: 6px;
+      }
+    </style>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral" });
+    </script>
+  </head>
+  <body>
+    <header>
+      <h1>Auth + Da ngon ngu + Upload anh - Diagrams</h1>
+      <div>Source snapshot: 2026-05-11</div>
+    </header>
+    <main>
+      <section>
+        <h2>Scope</h2>
+        <p>
+          These diagrams describe the current auth, language selection, and avatar upload flows
+          in the repo. Use them as a reference when updating code later.
+        </p>
+        <div class="note">
+          Current upload storage is local (<code>/uploads/avatars</code>) and avatar_url is
+          relative (<code>/uploads/avatars/..</code>). If switching to Cloudinary, replace the
+          storage participant and avatar_url becomes absolute.
+        </div>
+      </section>
+
+      <section>
+        <h2>Use Case Diagram</h2>
+        <div class="mermaid">
+flowchart LR
+  user([User])
+
+  subgraph System["Mini Grab Auth System (Web/Mobile + API)"]
+    uc_register([Register])
+    uc_login([Login])
+    uc_logout([Logout])
+    uc_view([View profile])
+    uc_update([Update profile])
+    uc_language([Update preferred language])
+    uc_upload([Upload avatar])
+  end
+
+  user --> uc_register
+  user --> uc_login
+  user --> uc_logout
+  user --> uc_view
+  user --> uc_update
+  user --> uc_language
+  user --> uc_upload
+
+  uc_update -. includes .-> uc_language
+  uc_update -. includes .-> uc_upload
+        </div>
+      </section>
+
+      <section>
+        <h2>Sequence Diagram - Login</h2>
+        <div class="mermaid">
+sequenceDiagram
+  actor User
+  participant Client as Web/Mobile App
+  participant API as Backend API (NestJS)
+  participant DB as Postgres (users)
+
+  User->>Client: Enter email/password
+  Client->>API: POST /auth/login (Accept-Language)
+  API->>DB: SELECT user by email
+  DB-->>API: user + password hash
+  API->>API: bcrypt compare + JWT sign
+  API-->>Client: { token, user, message }
+  Client-->>User: show message
+        </div>
+      </section>
+
+      <section>
+        <h2>Sequence Diagram - Update Language</h2>
+        <div class="mermaid">
+sequenceDiagram
+  actor User
+  participant Client as Web/Mobile App
+  participant API as Backend API (NestJS)
+  participant DB as Postgres (users)
+
+  User->>Client: Change language (vi/en)
+  Client->>Client: changeLanguage + update local UI
+  alt user logged in
+    Client->>API: PATCH /auth/me { preferred_language }
+    API->>DB: UPDATE users.preferred_language
+    DB-->>API: updated user
+    API-->>Client: user (message by Accept-Language)
+    Client-->>User: UI in selected language
+  else not logged in
+    Client-->>User: UI language only (no server update)
+  end
+        </div>
+      </section>
+
+      <section>
+        <h2>Sequence Diagram - Upload Avatar (Local Storage)</h2>
+        <div class="mermaid">
+sequenceDiagram
+  actor User
+  participant Client as Web/Mobile App
+  participant API as Backend API (NestJS)
+  participant Storage as Local Uploads (/uploads/avatars)
+  participant DB as Postgres (users)
+
+  User->>Client: Pick image
+  Client->>API: POST /auth/me/avatar (multipart + Bearer)
+  API->>API: JwtAuthGuard verify token
+  API->>Storage: Save file via multer diskStorage
+  API->>DB: UPDATE users.avatar_url
+  DB-->>API: updated user
+  API-->>Client: { message, user }
+  Client-->>User: show avatar (API_BASE_URL + avatar_url)
+        </div>
+      </section>
+
+      <section>
+        <h2>Activity Diagram - Profile Screen Flow</h2>
+        <div class="mermaid">
+flowchart TD
+  A([Open Profile]) --> B{Has token?}
+  B -- No --> C[Show login requirement]
+  B -- Yes --> D[GET /auth/me]
+  D --> E[Show profile form + language + avatar]
+  E --> F{User action}
+
+  F -- Change language --> G[Update UI language]
+  G --> H{Save?}
+  H -- Yes --> I[PATCH /auth/me preferred_language]
+  I --> E
+  H -- No --> E
+
+  F -- Update fields --> J[PATCH /auth/me]
+  J --> E
+
+  F -- Pick image --> K[Open ImagePicker / File input]
+  K --> L{Upload?}
+  L -- Yes --> M[POST /auth/me/avatar]
+  M --> N[Update avatar_url in DB]
+  N --> E
+  L -- No --> E
+        </div>
+      </section>
+
+      <section>
+        <h2>Notes for Future Changes</h2>
+        <ul>
+          <li>Cloudinary: replace Local Uploads with Cloudinary upload_stream; avatar_url becomes absolute.</li>
+          <li>i18next: replace hardcoded labels with i18n resources; call changeLanguage on login and profile load.</li>
+          <li>Endpoint alias: add POST /auth/avatar if required; keep /auth/me/avatar for compatibility.</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>
