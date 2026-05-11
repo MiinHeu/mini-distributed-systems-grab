@@ -21,6 +21,12 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   private pools: Record<Region, { primary: Pool; replica: Pool }>;
   private snowflake: Snowflake;
 
+  // Cache trạng thái node để tránh timeout 3s mỗi lần primary sập
+  private nodeStatus: Record<string, boolean> = {
+    NORTH_PRIMARY: true,
+    SOUTH_PRIMARY: true,
+  };
+
   constructor() {
     const user = process.env.POSTGRES_USER || 'postgres';
     const password = process.env.POSTGRES_PASSWORD || 'postgres';
@@ -80,6 +86,11 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     return this.snowflake.nextId();
   }
 
+  /** Cập nhật trạng thái node từ HealthService */
+  public setNodeStatus(region: Region, isPrimaryOnline: boolean) {
+    this.nodeStatus[`${region}_PRIMARY`] = isPrimaryOnline;
+  }
+
   async queryWithFailover<T extends QueryResultRow = any>(
     region: Region,
     queryText: string,
@@ -89,12 +100,22 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     const regionPools = this.pools[region];
     const regionName = region === Region.NORTH ? 'Miền Bắc' : 'Miền Nam';
 
+    const nodeKey = `${region}_PRIMARY`;
+
     try {
+      // Nếu cache cho biết primary đang sập, throw lỗi ngay để dùng replica, tránh đợi timeout 3s
+      if (this.nodeStatus[nodeKey] === false) {
+        throw new Error(`Primary node ${nodeKey} is known to be OFFLINE (cached)`);
+      }
+
       const result = await regionPools.primary.query<T>(queryText, values);
       return { result, isReadOnly: false };
     } catch (error: any) {
       const errMsg = error?.message || String(error);
       this.logger.warn(`[${region} Primary Down] Lỗi: ${errMsg}`);
+      
+      // Cập nhật cache là sập
+      this.nodeStatus[nodeKey] = false;
 
       if (isWriteRequest) {
         throw new ServiceUnavailableException({

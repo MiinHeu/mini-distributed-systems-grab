@@ -357,33 +357,43 @@ export class AuthService {
 
     const query = `UPDATE users SET ${updates.join(', ')} WHERE id = $${values.length} RETURNING ${this.userSelectColumns}`;
 
+    // Cập nhật CẢ 2 vùng để giữ nhất quán (Full Replication cho Users)
+    let result: any = null;
     for (const r of [Region.NORTH, Region.SOUTH]) {
       try {
         const { result: updated } = await this.database.queryWithFailover(r, query, values, true);
-        if (updated.rows[0]) return this.sanitizeUser(updated.rows[0]);
+        if (updated.rows[0] && !result) {
+          result = this.sanitizeUser(updated.rows[0]);
+        }
       } catch (e) {
-        if (r === Region.SOUTH) throw e;
+        this.logger.warn(`[patchMe] Lỗi khi cập nhật hồ sơ tại vùng ${r}: ${e.message}`);
       }
     }
-    throw new UnauthorizedException('Không thể cập nhật hồ sơ.');
+
+    if (!result) throw new UnauthorizedException('Không thể cập nhật hồ sơ.');
+    return result;
   }
 
   async updateAvatar(requestUser: RequestUser, avatarUrl: string, languageRaw?: string | null) {
     const query = `UPDATE users SET avatar_url = $1, updated_at = NOW() WHERE id = $2 RETURNING ${this.userSelectColumns}`;
     
+    // Cập nhật CẢ 2 vùng để giữ nhất quán (Full Replication cho Users)
+    let result: { message: string; user: any } | null = null;
     for (const r of [Region.NORTH, Region.SOUTH]) {
       try {
         const { result: updated } = await this.database.queryWithFailover(r, query, [avatarUrl, requestUser.userId], true);
-        if (updated.rows[0]) {
+        if (updated.rows[0] && !result) {
           const user = this.sanitizeUser(updated.rows[0]);
           const lang = this.resolveLanguage(languageRaw, user.preferred_language);
-          return { message: this.messages[lang].avatarUploaded, user };
+          result = { message: this.messages[lang].avatarUploaded, user };
         }
       } catch (e) {
-        if (r === Region.SOUTH) throw e;
+        this.logger.warn(`[updateAvatar] Lỗi khi cập nhật avatar tại vùng ${r}: ${e.message}`);
       }
     }
-    throw new UnauthorizedException('Không thể cập nhật ảnh đại diện.');
+
+    if (!result) throw new UnauthorizedException('Không thể cập nhật ảnh đại diện.');
+    return result;
   }
 
   logout(token: string, languageRaw?: string | null) {

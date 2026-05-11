@@ -14,15 +14,17 @@ export class DriversController {
 
   @UseGuards(JwtAuthGuard)
   @Patch('location')
-  async updateLocation(@Body() dto: UpdateLocationDto) {
-    return this.driversService.updateLocation(dto);
+  async updateLocation(@Body() dto: UpdateLocationDto, @Req() req: any) {
+    const driverId = dto.driver_id || req.user.userId;
+    return this.driversService.updateLocation({ ...dto, driver_id: driverId });
   }
 
   @UseGuards(JwtAuthGuard)
   @Patch('availability')
-  async updateAvailability(@Body() dto: UpdateAvailabilityDto) {
+  async updateAvailability(@Body() dto: UpdateAvailabilityDto, @Req() req: any) {
     this.logger.log(`Nhận yêu cầu availability: ${JSON.stringify(dto)}`);
-    return this.driversService.updateAvailability(dto);
+    const driverId = dto.driver_id || req.user.userId;
+    return this.driversService.updateAvailability({ ...dto, driver_id: driverId });
   }
 
   @Get('nearby')

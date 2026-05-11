@@ -1,3 +1,11 @@
+-- ╔══════════════════════════════════════════════════════════════════════╗
+-- ║  ⚠️  DEPRECATED — FILE NÀY KHÔNG ĐƯỢC SỬ DỤNG BỞI DOCKER-COMPOSE  ║
+-- ║                                                                      ║
+-- ║  Schema chính thức nằm tại: /database/01-init.sql                   ║
+-- ║  File này dùng kiểu SERIAL/UUID (cũ), schema mới dùng BIGINT       ║
+-- ║  (Snowflake ID). KHÔNG sử dụng file này cho môi trường production.  ║
+-- ╚══════════════════════════════════════════════════════════════════════╝
+
 -- Bật extension earthdistance để tính khoảng cách GPS
 CREATE EXTENSION IF NOT EXISTS cube;
 CREATE EXTENSION IF NOT EXISTS earthdistance;

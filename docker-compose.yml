@@ -16,6 +16,12 @@ services:
       - south_primary_data:/var/lib/postgresql/data
       - ./database:/docker-entrypoint-initdb.d
     command: postgres -c wal_level=replica -c max_wal_senders=3 -c wal_keep_size=64 -c cluster.region=SOUTH
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rideshare_admin -d rideshare_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   # ========== SOUTH REPLICA ==========
   south-replica:
@@ -30,7 +36,8 @@ services:
     volumes:
       - south_replica_data:/var/lib/postgresql/data
     depends_on:
-      - south-primary
+      south-primary:
+        condition: service_healthy
     command: >
       bash -c "
       if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
@@ -58,6 +65,12 @@ services:
       - north_primary_data:/var/lib/postgresql/data
       - ./database:/docker-entrypoint-initdb.d
     command: postgres -c wal_level=replica -c max_wal_senders=3 -c wal_keep_size=64 -c cluster.region=NORTH
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rideshare_admin -d rideshare_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   # ========== NORTH REPLICA ==========
   north-replica:
@@ -72,7 +85,8 @@ services:
     volumes:
       - north_replica_data:/var/lib/postgresql/data
     depends_on:
-      - north-primary
+      north-primary:
+        condition: service_healthy
     command: >
       bash -c "
       if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
@@ -97,7 +111,7 @@ services:
       DB_PASSWORD: Admin@123456
       LISTEN_PORT: 6432
       POOL_MODE: transaction
-      AUTH_TYPE: scram-sha-256
+      AUTH_TYPE: md5
       IGNORE_STARTUP_PARAMETERS: extra_float_digits
     ports:
       - "5434:6432"
@@ -114,7 +128,7 @@ services:
       DB_PASSWORD: Admin@123456
       LISTEN_PORT: 6432
       POOL_MODE: transaction
-      AUTH_TYPE: scram-sha-256
+      AUTH_TYPE: md5
       IGNORE_STARTUP_PARAMETERS: extra_float_digits
     ports:
       - "5435:6432"
@@ -131,7 +145,7 @@ services:
       DB_PASSWORD: Admin@123456
       LISTEN_PORT: 6432
       POOL_MODE: transaction
-      AUTH_TYPE: scram-sha-256
+      AUTH_TYPE: md5
       IGNORE_STARTUP_PARAMETERS: extra_float_digits
     ports:
       - "5432:6432"
@@ -148,7 +162,7 @@ services:
       DB_PASSWORD: Admin@123456
       LISTEN_PORT: 6432
       POOL_MODE: transaction
-      AUTH_TYPE: scram-sha-256
+      AUTH_TYPE: md5
       IGNORE_STARTUP_PARAMETERS: extra_float_digits
     ports:
       - "5433:6432"

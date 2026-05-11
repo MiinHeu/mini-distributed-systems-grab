@@ -15,29 +15,32 @@ export class DriversService {
    */
   async updateLocation(dto: UpdateLocationDto) {
     const region = determineRegionFromLocation(dto.latitude);
-    const query = `
-      UPDATE drivers 
-      SET latitude = $1, longitude = $2, region = $3 
-      WHERE id = $4
-      RETURNING *;
-    `;
-    const values = [dto.latitude, dto.longitude, region, dto.driver_id];
+    const allRegions = [Region.NORTH, Region.SOUTH];
+    let updatedDriver: any = null;
 
-    // isWriteRequest = true -> Bắt buộc dùng Primary. Nếu sập sẽ throw error cho client xử lý.
-    const { result } = await this.db.queryWithFailover(
-      region,
-      query,
-      values,
-      true,
-    );
+    for (const r of allRegions) {
+      try {
+        const { result } = await this.db.queryWithFailover(
+          r,
+          `UPDATE drivers SET latitude = $1, longitude = $2, region = $3 WHERE id = $4 RETURNING *`,
+          [dto.latitude, dto.longitude, region, dto.driver_id],
+          true,
+        );
+        if (r === region && result.rowCount && result.rowCount > 0) {
+          updatedDriver = result.rows[0];
+        }
+      } catch (err) {
+        // Bỏ qua nếu vùng kia sập
+      }
+    }
 
-    if (result.rowCount === 0) {
-      throw new NotFoundException(`Không tìm thấy tài xế ${dto.driver_id}`);
+    if (!updatedDriver) {
+      throw new NotFoundException(`Không tìm thấy tài xế ${dto.driver_id} trong hệ thống.`);
     }
 
     return {
-      message: 'Đã cập nhật vị trí',
-      driver: result.rows[0],
+      message: 'Đã cập nhật vị trí trên toàn hệ thống',
+      driver: updatedDriver,
       region_routed_to: region,
     };
   }
@@ -47,7 +50,7 @@ export class DriversService {
    * Dùng khi frontend không biết region (ví dụ lần đầu đăng nhập)
    */
   private async findDriverRegion(driverId: string): Promise<Region> {
-    const query = `SELECT region FROM drivers WHERE id = $1 LIMIT 1`;
+    const query = `SELECT region FROM drivers WHERE id = $1 OR user_id = $1 LIMIT 1`;
     for (const region of [Region.NORTH, Region.SOUTH]) {
       try {
         const res = await this.db.queryWithFailover(region, query, [driverId], false);
@@ -65,21 +68,20 @@ export class DriversService {
    * Cập nhật trạng thái rảnh/bận
    */
   async updateAvailability(dto: UpdateAvailabilityDto) {
-    this.logger.log(`Cập nhật trạng thái cho driver_id: ${dto.driver_id}, available: ${dto.is_available}`);
-    
+    const driverId = dto.driver_id || '';
     const region: Region = dto.region
       ? (dto.region as Region)
-      : await this.findDriverRegion(dto.driver_id);
+      : await this.findDriverRegion(driverId);
 
-    this.logger.log(`Đã xác định region cho driver ${dto.driver_id}: ${region}`);
+    this.logger.log(`Đã xác định region cho driver ${driverId}: ${region}`);
 
     const query = `
       UPDATE drivers 
       SET is_available = $1 
-      WHERE id = $2
+      WHERE id = $2 OR user_id = $2
       RETURNING *;
     `;
-    const values = [dto.is_available, dto.driver_id];
+    const values = [dto.is_available, driverId];
 
     const { result } = await this.db.queryWithFailover(
       region,

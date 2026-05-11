@@ -5,8 +5,8 @@ import axios from 'axios';
 import { API_BASE_URL, WS_BASE_URL } from '../config';
 import { Colors, Spacing, Radius, Shadow } from '../theme';
 
-interface Message { id: string; trip_id: number; sender_id: number; receiver_id: number; content: string; type: 'text' | 'image'; is_read: boolean; created_at: string; sender_name?: string; }
-interface ChatScreenProps { tripId: number; currentUserId: number; receiverId: number; receiverName: string; token: string; }
+interface Message { id: string; trip_id: string; sender_id: string; receiver_id: string; content: string; type: 'text' | 'image'; is_read: boolean; created_at: string; sender_name?: string; }
+interface ChatScreenProps { tripId: string; currentUserId: string; receiverId: string; receiverName: string; token: string; }
 
 export default function ChatScreen({ tripId, currentUserId, receiverId, receiverName, token }: ChatScreenProps) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -39,10 +39,10 @@ export default function ChatScreen({ tripId, currentUserId, receiverId, receiver
       if (msg.receiver_id === currentUserId) socket.emit('message:read', { trip_id: tripId });
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     });
-    socket.on('message:read', (data: { trip_id: number; read_by: number }) => {
+    socket.on('message:read', (data: { trip_id: string; read_by: string }) => {
       if (data.read_by !== currentUserId) setMessages(prev => prev.map(m => m.sender_id === currentUserId ? { ...m, is_read: true } : m));
     });
-    socket.on('typing', (data: { user_id: number; is_typing: boolean }) => { if (data.user_id !== currentUserId) setIsTyping(data.is_typing); });
+    socket.on('typing', (data: { user_id: string; is_typing: boolean }) => { if (data.user_id !== currentUserId) setIsTyping(data.is_typing); });
     socket.on('error', (err: { message: string }) => Alert.alert('Loi ket noi', err.message));
     return () => { socket.disconnect(); if (typingTimerRef.current) clearTimeout(typingTimerRef.current); };
   }, [tripId, token, currentUserId, loadHistory]);

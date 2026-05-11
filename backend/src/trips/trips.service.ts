@@ -54,34 +54,34 @@ export class TripsService {
   }
 
   async cancelTrip(id: string, userId?: string) {
-    // Nếu có userId, tìm trip theo region và kiểm tra quyền
-    if (userId !== undefined) {
-      const region = await this.findTripRegion(id);
-      const { result } = await this.database.queryWithFailover<any>(
-        region,
-        `UPDATE trips
-         SET status = 'cancelled'
-         WHERE id = $1 AND customer_id = $2 AND status IN ('pending', 'accepted')
-         RETURNING *`,
-        [id, userId],
-        true,
-      );
-      if (result.rowCount === 0) {
-        throw new NotFoundException('Không tìm thấy chuyến hoặc bạn không có quyền hủy');
-      }
-      return result.rows[0];
+    const region = await this.findTripRegion(id);
+
+    // 1. Cập nhật trạng thái trip
+    const query = userId !== undefined
+      ? `UPDATE trips SET status = 'cancelled' WHERE id = $1 AND customer_id = $2 AND status IN ('pending', 'accepted') RETURNING *`
+      : `UPDATE trips SET status = 'cancelled' WHERE id = $1 RETURNING *`;
+    const params = userId !== undefined ? [id, userId] : [id];
+
+    const { result } = await this.database.queryWithFailover<any>(region, query, params, true);
+
+    if (result.rowCount === 0) {
+      if (userId !== undefined) throw new NotFoundException('Không tìm thấy chuyến hoặc bạn không có quyền hủy');
+      return { message: 'Trip not found' };
     }
 
-    // Legacy: dùng raw pg
-    const region = await this.findTripRegion(id).catch(() => Region.SOUTH);
-    const { result } = await this.database.queryWithFailover(
-      region,
-      `UPDATE trips SET status = 'cancelled' WHERE id = $1 RETURNING *`,
-      [id],
-      true,
-    );
-    if (result.rowCount === 0) return { message: 'Trip not found' };
-    return result.rows[0];
+    const trip = result.rows[0];
+
+    // 2. Nếu chuyến đã có tài xế nhận, giải phóng tài xế
+    if (trip.driver_id) {
+      await this.database.queryWithFailover(
+        region,
+        `UPDATE drivers SET is_available = true WHERE id = $1`,
+        [trip.driver_id],
+        true,
+      );
+    }
+
+    return trip;
   }
 
   async getPendingTrips(regionRaw: string) {
@@ -105,27 +105,26 @@ export class TripsService {
   async acceptTrip(tripId: string, userId: string) {
     const region = await this.findTripRegion(tripId);
 
-    // Tìm driver_id (UUID) của user này trong vùng tương ứng
+    // 1. Tìm và Khóa tài xế (Atomic Update)
+    // Dùng UPDATE ... WHERE is_available = true để đảm bảo không bị race condition
     const driverRes = await this.database.queryWithFailover(
       region,
-      `SELECT id, is_available FROM drivers WHERE user_id = $1 AND region = $2 LIMIT 1`,
+      `UPDATE drivers 
+       SET is_available = false 
+       WHERE user_id = $1 AND region = $2 AND is_available = true 
+       RETURNING id`,
       [userId, region],
-      false,
+      true,
     );
 
     if (driverRes.result.rowCount === 0) {
-      throw new BadRequestException('Bạn chưa có hồ sơ tài xế trong vùng này.');
+      throw new ConflictException('Bạn đang bận hoặc không có hồ sơ tài xế trong vùng này.');
     }
 
-    const driver = driverRes.result.rows[0];
-    if (!driver.is_available) {
-      throw new ConflictException('Bạn đang bận thực hiện một chuyến xe khác.');
-    }
-
-    const driverId = driver.id;
+    const driverId = driverRes.result.rows[0].id;
 
     try {
-      // 1. Cập nhật chuyến xe
+      // 2. Cập nhật chuyến xe
       const { result } = await this.database.queryWithFailover<any>(
         region,
         `UPDATE trips
@@ -135,22 +134,52 @@ export class TripsService {
         [driverId, tripId],
         true,
       );
+
       if (result.rowCount === 0) {
-        throw new ConflictException('Chuyến đã được nhận bởi tài xế khác hoặc không còn ở trạng thái chờ');
+        // Giải phóng tài xế nếu trip đã bị người khác nhận trước đó
+        const allRegions = [Region.NORTH, Region.SOUTH];
+        for (const r of allRegions) {
+          try {
+            await this.database.queryWithFailover(
+              r,
+              `UPDATE drivers SET is_available = true WHERE id = $1`,
+              [driverId],
+              true,
+            );
+          } catch (err) {}
+        }
+        throw new ConflictException('Chuyến đã được nhận bởi tài xế khác hoặc đã bị hủy.');
       }
 
-      // 2. Cập nhật trạng thái tài xế thành BẬN
-      await this.database.queryWithFailover(
-        region,
-        `UPDATE drivers SET is_available = false WHERE id = $1`,
-        [driverId],
-        true,
-      );
+      // 3. Khóa tài xế trên TOÀN HỆ THỐNG sau khi đã nhận trip thành công
+      const allRegions = [Region.NORTH, Region.SOUTH];
+      for (const r of allRegions) {
+        try {
+          await this.database.queryWithFailover(
+            r,
+            `UPDATE drivers SET is_available = false WHERE id = $1`,
+            [driverId],
+            true,
+          );
+        } catch (err) {}
+      }
 
       return result.rows[0];
     } catch (error) {
+      // Giải phóng tài xế nếu có lỗi xảy ra
+      const allRegions = [Region.NORTH, Region.SOUTH];
+      for (const r of allRegions) {
+        try {
+          await this.database.queryWithFailover(
+            r,
+            `UPDATE drivers SET is_available = true WHERE id = $1`,
+            [driverId],
+            true,
+          );
+        } catch (err) {}
+      }
       if (error instanceof ConflictException || error instanceof BadRequestException) throw error;
-      throw new ConflictException('Hệ thống đang ở chế độ chỉ đọc, không thể nhận chuyến');
+      throw new ConflictException('Lỗi hệ thống khi nhận chuyến. Vui lòng thử lại.');
     }
   }
 
@@ -240,12 +269,17 @@ export class TripsService {
     }
 
     // Giải phóng tài xế thành RẢNH
-    await this.database.queryWithFailover(
-      region,
-      `UPDATE drivers SET is_available = true WHERE id = $1`,
-      [driverId],
-      true,
-    );
+    const allRegions = [Region.NORTH, Region.SOUTH];
+    for (const r of allRegions) {
+      try {
+        await this.database.queryWithFailover(
+          r,
+          `UPDATE drivers SET is_available = true WHERE id = $1`,
+          [driverId],
+          true,
+        );
+      } catch (err) {}
+    }
 
     return {
       message: 'Đã từ chối chuyến. Chuyến sẽ được chuyển cho tài xế khác.',
@@ -266,10 +300,25 @@ export class TripsService {
       ORDER BY t.created_at DESC
     `;
 
-    const [northRes, southRes] = await Promise.all([
-      this.database.queryWithFailover(Region.NORTH, query, [userId], false),
-      this.database.queryWithFailover(Region.SOUTH, query, [userId], false),
-    ]);
+    // Query từng vùng độc lập — 1 vùng sập không ảnh hưởng vùng kia
+    let northRes: { result: { rows: any[] }; isReadOnly: boolean } = { result: { rows: [] }, isReadOnly: false };
+    let southRes: { result: { rows: any[] }; isReadOnly: boolean } = { result: { rows: [] }, isReadOnly: false };
+    let northFailed = false;
+    let southFailed = false;
+
+    try {
+      northRes = await this.database.queryWithFailover(Region.NORTH, query, [userId], false);
+    } catch (e) {
+      northFailed = true;
+      this.logger.warn(`[getTripHistory] Không thể truy vấn Miền Bắc: ${e.message}`);
+    }
+
+    try {
+      southRes = await this.database.queryWithFailover(Region.SOUTH, query, [userId], false);
+    } catch (e) {
+      southFailed = true;
+      this.logger.warn(`[getTripHistory] Không thể truy vấn Miền Nam: ${e.message}`);
+    }
 
     const allTrips = [...northRes.result.rows, ...southRes.result.rows].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
@@ -277,21 +326,27 @@ export class TripsService {
 
     console.log(`[HistoryAudit] userId: ${userId}, north: ${northRes.result.rows.length}, south: ${southRes.result.rows.length}, total: ${allTrips.length}`);
 
-    const isReadOnly = northRes.isReadOnly || southRes.isReadOnly;
+    const isReadOnly = northRes.isReadOnly || southRes.isReadOnly || northFailed || southFailed;
 
     // Xác định node đang phục vụ
     let activeNode = 'primary';
-    if (northRes.isReadOnly && southRes.isReadOnly) {
+    if ((northRes.isReadOnly || northFailed) && (southRes.isReadOnly || southFailed)) {
       activeNode = 'replica (both regions)';
-    } else if (northRes.isReadOnly) {
-      activeNode = 'northReplica';
-    } else if (southRes.isReadOnly) {
-      activeNode = 'southReplica';
+    } else if (northRes.isReadOnly || northFailed) {
+      activeNode = 'NORTH_REPLICA';
+    } else if (southRes.isReadOnly || southFailed) {
+      activeNode = 'SOUTH_REPLICA';
     }
 
-    // Tạo warning message rõ ràng khi ở read-only mode
+    // Tạo warning message rõ ràng khi ở read-only mode hoặc vùng sập
     let warning: string | null = null;
-    if (northRes.isReadOnly && southRes.isReadOnly) {
+    if (northFailed && southFailed) {
+      warning = 'Cả hai vùng đều không khả dụng. Không thể truy vấn dữ liệu.';
+    } else if (northFailed) {
+      warning = 'Miền Bắc không khả dụng. Chỉ hiển thị dữ liệu Miền Nam.';
+    } else if (southFailed) {
+      warning = 'Miền Nam không khả dụng. Chỉ hiển thị dữ liệu Miền Bắc.';
+    } else if (northRes.isReadOnly && southRes.isReadOnly) {
       warning = 'Cả hai vùng đang ở chế độ chỉ đọc. Dữ liệu có thể chưa được cập nhật mới nhất.';
     } else if (northRes.isReadOnly) {
       warning = 'Miền Bắc đang bảo trì. Dữ liệu Miền Bắc được lấy từ bản sao (read-only).';
@@ -312,40 +367,63 @@ export class TripsService {
   }
 
   async bookTrip(body: any, userId: string) {
+    // Kiểm tra giới hạn fare để tránh numeric overflow (numeric(10,2) max ~99tr)
+    if (body.fare && (body.fare < 0 || body.fare > 99000000)) {
+      throw new BadRequestException('Giá tiền không hợp lệ hoặc vượt quá hạn mức cho phép (99.000.000 VND)');
+    }
+
     const ctx = this.dbRouting.getWriteContext(body.pickup_lat);
 
-    const tripId = this.database.generateId();
-    const { result } = await this.database.queryWithFailover<any>(
-      ctx.region,
-      `INSERT INTO trips (
-        id, customer_id, status, pickup_address, dropoff_address, 
-        pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, 
-        fare, region
-      )
-      VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING *`,
-      [
-        tripId,
-        userId,
-        body.pickup || 'Unknown',
-        body.dropoff || 'Unknown',
-        body.pickup_lat,
-        body.pickup_lng,
-        body.dropoff_lat,
-        body.dropoff_lng,
-        body.fare || 0,
-        ctx.region.toUpperCase(),
-      ],
-      true,
-    );
+    // 1. Kiểm tra xem khách hàng có đang trong một chuyến xe khác không
+    // Phải kiểm tra cả 2 vùng để đảm bảo tính nhất quán toàn cục
+    for (const r of [Region.NORTH, Region.SOUTH]) {
+      const activeTrips = await this.database.queryWithFailover(
+        r,
+        `SELECT id FROM trips WHERE customer_id = $1 AND status IN ('pending', 'accepted') LIMIT 1`,
+        [userId],
+        false,
+      );
+      if (activeTrips.result.rowCount && activeTrips.result.rowCount > 0) {
+        throw new ConflictException('Bạn đang có một chuyến xe chưa hoàn thành. Không thể đặt thêm.');
+      }
+    }
 
-    const trip = result.rows[0];
-    return {
-      message: 'Đặt chuyến thành công',
-      trip,
-      region: ctx.region,
-      activeNode: ctx.activeNode,
-    };
+    const tripId = this.database.generateId();
+    try {
+      const { result } = await this.database.queryWithFailover<any>(
+        ctx.region,
+        `INSERT INTO trips (
+          id, customer_id, status, pickup_address, dropoff_address, 
+          pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, 
+          fare, region
+        )
+        VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING *`,
+        [
+          tripId,
+          userId,
+          body.pickup_address || body.pickup || 'Unknown',
+          body.dropoff_address || body.dropoff || 'Unknown',
+          body.pickup_lat,
+          body.pickup_lng,
+          body.dropoff_lat || 0,
+          body.dropoff_lng || 0,
+          body.fare,
+          ctx.region,
+        ],
+        true,
+      );
+
+      return {
+        message: 'Đã đặt chuyến thành công',
+        trip: result.rows[0],
+      };
+    } catch (e: any) {
+      if (e.code === '23505') {
+        throw new ConflictException('Bạn đang có một chuyến xe chưa hoàn thành. Vui lòng kiểm tra lại.');
+      }
+      throw e;
+    }
   }
 
   private normalizeRegion(regionRaw: string): Region {

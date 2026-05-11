@@ -43,11 +43,12 @@ export class PaymentsService {
     const amount = trip.fare || 50000;
 
     if (method === 'cash') {
+      const paymentId = this.db.generateId();
       const { result } = await this.db.queryWithFailover(
         region,
-        `INSERT INTO payments (trip_id, amount, method, status)
-         VALUES ($1, $2, 'cash', 'completed') RETURNING *`,
-        [trip_id, amount],
+        `INSERT INTO payments (id, trip_id, amount, method, status)
+         VALUES ($1, $2, $3, 'cash', 'completed') RETURNING *`,
+        [paymentId, trip_id, amount],
         true,
       );
       return { message: 'Thanh toán tiền mặt thành công', payment: result.rows[0] };
@@ -99,8 +100,11 @@ export class PaymentsService {
       return { message: 'Chữ ký không hợp lệ', code: '97' };
     }
 
-    const tripId = txnRef.split('-')[0];
-    const region = Region.SOUTH; // payments thường ở South, fallback OK
+    const tripId = Number(txnRef.split('-')[0]);
+
+    // Tìm đúng region chứa trip thay vì hardcode
+    const found = await this.findTripRegion(tripId);
+    const region = found ? found.region : Region.SOUTH; // Fallback SOUTH nếu không tìm thấy
 
     if (responseCode === '00') {
       await this.db.queryWithFailover(

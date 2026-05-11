@@ -66,11 +66,15 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
   private intervalId?: NodeJS.Timeout;
   private readonly startedAt = Date.now();
 
+  // Mặc định lạc quan (optimistic): giả sử tất cả node đều online khi khởi động.
+  // Điều này tránh lỗi ServiceUnavailableException trong vài giây đầu trước khi
+  // health check lần đầu hoàn tất. Nếu node thực sự sập, updateStatuses() sẽ
+  // cập nhật thành false ngay trong lần check đầu tiên (~vài trăm ms sau khởi động).
   private statuses: HealthSnapshot = {
-    NORTH_PRIMARY: false,
-    NORTH_REPLICA: false,
-    SOUTH_PRIMARY: false,
-    SOUTH_REPLICA: false,
+    NORTH_PRIMARY: true,
+    NORTH_REPLICA: true,
+    SOUTH_PRIMARY: true,
+    SOUTH_REPLICA: true,
   };
 
   private responseTimes: Record<NodeKey, number | null> = {
@@ -94,8 +98,11 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
 
   constructor(private databaseService: DatabaseService) {}
 
-  onModuleInit() {
-    void this.updateStatuses();
+  async onModuleInit() {
+    // Chạy health check lần đầu ngay lập tức (await) để có trạng thái chính xác
+    // trước khi bất kỳ request nào đến
+    await this.updateStatuses();
+    this.logger.log('[HealthService] Health check lần đầu hoàn tất — hệ thống sẵn sàng phục vụ.');
     this.intervalId = setInterval(() => {
       void this.updateStatuses();
     }, this.intervalMs);
@@ -213,40 +220,55 @@ export class HealthService implements OnModuleInit, OnModuleDestroy {
     this.statuses = newStatuses;
     this.lastCheckedAt = new Date().toISOString();
 
+    // Đồng bộ trạng thái sang DatabaseService để tối ưu failover (tránh timeout 3s)
+    this.databaseService.setNodeStatus(Region.NORTH, newStatuses.NORTH_PRIMARY);
+    this.databaseService.setNodeStatus(Region.SOUTH, newStatuses.SOUTH_PRIMARY);
+
     // Fetch replication info from online primaries
-    const [northRepl, southRepl] = await Promise.all([
-      newStatuses.NORTH_PRIMARY
-        ? this.checkReplication(this.databaseService.northPrimary, 'MIỀN BẮC')
-        : Promise.resolve({ connected: false, replicas: [] } as RegionReplicationStatus),
-      newStatuses.SOUTH_PRIMARY
-        ? this.checkReplication(this.databaseService.southPrimary, 'MIỀN NAM')
-        : Promise.resolve({ connected: false, replicas: [] } as RegionReplicationStatus),
-    ]);
+    let northRepl: RegionReplicationStatus = { connected: false, replicas: [] };
+    let southRepl: RegionReplicationStatus = { connected: false, replicas: [] };
+
+    try {
+      if (newStatuses.NORTH_PRIMARY) {
+        northRepl = await this.checkReplication(this.databaseService.northPrimary, 'MIỀN BẮC');
+      }
+    } catch (e) {
+      this.logger.error(`[HealthMonitor] Error checking NORTH replication: ${e.message}`);
+    }
+
+    try {
+      if (newStatuses.SOUTH_PRIMARY) {
+        southRepl = await this.checkReplication(this.databaseService.southPrimary, 'MIỀN NAM');
+      }
+    } catch (e) {
+      this.logger.error(`[HealthMonitor] Error checking SOUTH replication: ${e.message}`);
+    }
 
     this.replicationData = {
       [Region.NORTH]: northRepl,
       [Region.SOUTH]: southRepl,
     };
 
-    // Đếm số lượng chuyến đi trong từng vùng
-    const [northCount, southCount] = await Promise.all([
-      newStatuses.NORTH_PRIMARY || newStatuses.NORTH_REPLICA
-        ? (async () => {
-            const ds = newStatuses.NORTH_PRIMARY ? this.databaseService.northPrimary : this.databaseService.northReplica;
-            const res = await ds.query('SELECT COUNT(*) FROM trips');
-            return parseInt(res.rows[0].count);
-          })()
-        : Promise.resolve(0),
-      newStatuses.SOUTH_PRIMARY || newStatuses.SOUTH_REPLICA
-        ? (async () => {
-            const ds = newStatuses.SOUTH_PRIMARY ? this.databaseService.southPrimary : this.databaseService.southReplica;
-            const res = await ds.query('SELECT COUNT(*) FROM trips');
-            return parseInt(res.rows[0].count);
-          })()
-        : Promise.resolve(0),
-    ]);
+    // Đếm số lượng chuyến đi trong từng vùng (bọc try-catch để tránh crash toàn cục)
+    try {
+      if (newStatuses.NORTH_PRIMARY || newStatuses.NORTH_REPLICA) {
+        const ds = newStatuses.NORTH_PRIMARY ? this.databaseService.northPrimary : this.databaseService.northReplica;
+        const res = await ds.query('SELECT COUNT(*) FROM trips');
+        this.tripCounts[Region.NORTH] = parseInt(res.rows[0].count);
+      }
+    } catch (e) {
+      this.logger.error(`[HealthMonitor] Error counting NORTH trips: ${e.message}`);
+    }
 
-    this.tripCounts = { [Region.NORTH]: northCount, [Region.SOUTH]: southCount };
+    try {
+      if (newStatuses.SOUTH_PRIMARY || newStatuses.SOUTH_REPLICA) {
+        const ds = newStatuses.SOUTH_PRIMARY ? this.databaseService.southPrimary : this.databaseService.southReplica;
+        const res = await ds.query('SELECT COUNT(*) FROM trips');
+        this.tripCounts[Region.SOUTH] = parseInt(res.rows[0].count);
+      }
+    } catch (e) {
+      this.logger.error(`[HealthMonitor] Error counting SOUTH trips: ${e.message}`);
+    }
   }
 
   snapshot(): HealthSnapshot {

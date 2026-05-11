@@ -62,6 +62,48 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Bảng ratings (đánh giá tài xế sau mỗi chuyến)
+CREATE TABLE IF NOT EXISTS ratings (
+  id BIGINT PRIMARY KEY,
+  trip_id BIGINT REFERENCES trips(id) ON DELETE CASCADE,
+  customer_id BIGINT REFERENCES users(id),
+  driver_id BIGINT REFERENCES drivers(id),
+  score NUMERIC(2,1) NOT NULL CHECK (score >= 1 AND score <= 5),
+  comment TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Index để query đánh giá theo tài xế
+CREATE INDEX IF NOT EXISTS idx_ratings_driver_id ON ratings(driver_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ratings_trip_customer ON ratings(trip_id, customer_id);
+
+-- Bảng payments (thanh toán)
+CREATE TABLE IF NOT EXISTS payments (
+  id BIGINT PRIMARY KEY,
+  trip_id BIGINT REFERENCES trips(id) ON DELETE CASCADE,
+  amount DECIMAL(12,2) NOT NULL,
+  method VARCHAR(10) DEFAULT 'cash' CHECK (method IN ('cash', 'vnpay')),
+  status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
+  vnpay_transaction_id VARCHAR(100),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Index để query thanh toán theo trip
+CREATE INDEX IF NOT EXISTS idx_payments_trip_id ON payments(trip_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+
+-- Bảng replication_test (dùng để kiểm tra replication hoạt động)
+CREATE TABLE IF NOT EXISTS replication_test (
+    id SERIAL PRIMARY KEY,
+    node_name TEXT,
+    message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Index cho trips
+CREATE INDEX IF NOT EXISTS idx_trips_status_region ON trips(status, region);
+CREATE INDEX IF NOT EXISTS idx_messages_trip_id ON messages(trip_id, created_at);
+
 -- Nạp dữ liệu mẫu
 DO $$
 DECLARE

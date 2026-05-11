@@ -9,9 +9,11 @@ export class LocationRouterService {
    * Thống nhất với determineRegionFromLocation() trong location.utils.ts
    */
   getRegion(latitude: number): Region {
-    if (latitude >= REGION_LATITUDE_THRESHOLD) {
-      return Region.NORTH;
+    if (latitude === undefined || latitude === null) {
+      console.trace('[LocationRouter] Latitude is undefined!');
     }
-    return Region.SOUTH;
+    const region = latitude >= REGION_LATITUDE_THRESHOLD ? Region.NORTH : Region.SOUTH;
+    console.log(`[LocationRouter] lat=${latitude} threshold=${REGION_LATITUDE_THRESHOLD} result=${region}`);
+    return region;
   }
 }

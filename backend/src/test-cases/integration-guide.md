@@ -5,11 +5,11 @@ Các test case này cần chạy với Docker DB thật. Thực hiện từng b�
 ## Chuẩn bị
 
 ```bash
-# 1. Khởi động 4 DB nodes
-docker compose -f DB/docker-compose.yml up -d
+# 1. Khởi động toàn bộ hệ thống (4 DB nodes + PgBouncer + Monitoring)
+docker compose up -d
 
 # 2. Chờ replica sync xong (~30 giây)
-docker logs pg-north-replica --follow
+docker logs south-replica --follow
 # Thấy "database system is ready to accept read only connections" → OK
 
 # 3. Khởi động backend
@@ -42,14 +42,14 @@ Content-Type: application/json
 ```json
 {
   "message": "Đặt chuyến thành công",
-  "region": "north",
-  "activeNode": "northPrimary"
+  "region": "NORTH",
+  "activeNode": "NORTH_PRIMARY"
 }
 ```
 
 **Backend log phải có:**
 ```
-[WRITE ROUTE] lat=21.0285 → NORTH → northPrimary
+[WRITE ROUTE] lat=21.0285 → NORTH → NORTH_PRIMARY
 ```
 
 ---
@@ -77,8 +77,8 @@ Content-Type: application/json
 **Kết quả mong đợi:**
 ```json
 {
-  "region": "south",
-  "activeNode": "southPrimary"
+  "region": "SOUTH",
+  "activeNode": "SOUTH_PRIMARY"
 }
 ```
 
@@ -91,7 +91,7 @@ Content-Type: application/json
 ```bash
 # Bước 1: Đặt chuyến tại Hà Nội (ghi vào north-primary)
 # Bước 2: Kiểm tra replica có data không
-docker exec -it pg-north-replica psql -U rideshare_admin -d rideshare_db \
+docker exec -it north-replica psql -U rideshare_admin -d rideshare_db \
   -c "SELECT id, pickup_address, region FROM trips ORDER BY created_at DESC LIMIT 3;"
 ```
 
@@ -99,7 +99,7 @@ docker exec -it pg-north-replica psql -U rideshare_admin -d rideshare_db \
 
 **Kiểm tra replication đang chạy:**
 ```bash
-docker exec -it pg-north-primary psql -U rideshare_admin -d rideshare_db \
+docker exec -it north-primary psql -U rideshare_admin -d rideshare_db \
   -c "SELECT application_name, state, sync_state, write_lag FROM pg_stat_replication;"
 ```
 
@@ -111,7 +111,7 @@ docker exec -it pg-north-primary psql -U rideshare_admin -d rideshare_db \
 
 ```bash
 # Bước 1: Tắt south primary
-docker stop pg-south-primary
+docker stop south-primary
 
 # Bước 2: Chờ 5-10 giây (health check interval)
 # Bước 3: Kiểm tra health
@@ -123,11 +123,11 @@ curl http://localhost:3000/health
 {
   "data": {
     "nodes": {
-      "southPrimary": { "status": "offline" },
-      "southReplica": { "status": "online" }
+      "SOUTH_PRIMARY": { "status": "offline", "responseTimeMs": null },
+      "SOUTH_REPLICA": { "status": "online", "responseTimeMs": 3 }
     },
     "serviceLevel": {
-      "south": "readonly"
+      "SOUTH": "readonly"
     }
   }
 }
@@ -135,8 +135,8 @@ curl http://localhost:3000/health
 
 **Backend log phải có:**
 ```
-[HealthMonitor] Status changed: southPrimary: online → offline
-[READ ROUTE] lat=10.77 → SOUTH → southReplica (READ-ONLY: primary down)
+[HealthMonitor] Trạng thái thay đổi: SOUTH_PRIMARY: ONLINE → OFFLINE
+[READ ROUTE] lat=10.77 → SOUTH → SOUTH_REPLICA (READ-ONLY: primary down)
 ```
 
 ---
@@ -161,8 +161,8 @@ Content-Type: application/json
 ```json
 {
   "readOnly": true,
-  "warning": "Write database (SOUTH primary) is unavailable. Replica is read-only.",
-  "activeNode": "southReplica",
+  "warning": "Tính năng GHI (Miền Nam) tạm thời bị khóa do hệ thống đang bảo trì. Replica chỉ cho phép ĐỌC.",
+  "activeNode": "SOUTH_REPLICA",
   "data": null
 }
 ```
@@ -183,7 +183,7 @@ Authorization: Bearer <token>
 {
   "readOnly": true,
   "warning": "Miền Nam đang bảo trì. Dữ liệu Miền Nam được lấy từ bản sao (read-only).",
-  "activeNode": "southReplica",
+  "activeNode": "SOUTH_REPLICA",
   "data": [...]
 }
 ```
@@ -196,7 +196,7 @@ Authorization: Bearer <token>
 
 ```bash
 # Tắt cả Miền Nam
-docker stop pg-south-primary pg-south-replica
+docker stop south-primary south-replica
 
 # Gửi request đến Miền Bắc
 curl http://localhost:3000/trips/history \
@@ -207,8 +207,8 @@ curl http://localhost:3000/trips/history \
 
 ```bash
 # Kiểm tra health
-curl http://localhost:3000/health/north  # → serviceLevel: "full"
-curl http://localhost:3000/health/south  # → serviceLevel: "unavailable"
+curl http://localhost:3000/health/north  # → serviceLevel: { "NORTH": "full" }
+curl http://localhost:3000/health/south  # → serviceLevel: { "SOUTH": "unavailable" }
 ```
 
 ---
@@ -218,20 +218,20 @@ curl http://localhost:3000/health/south  # → serviceLevel: "unavailable"
 **Thao tác:**
 
 ```bash
-docker stop pg-south-primary pg-south-replica
+docker stop south-primary south-replica
 
 # Gửi request đến Miền Nam
 curl http://localhost:3000/trips/history \
   -H "Authorization: Bearer <token>"
 ```
 
-**Kết quả mong đợi:** HTTP 503, app không crash
+**Kết quả mong đợi:** HTTP 200, data rỗng cho miền Nam, app không crash
 ```json
 {
   "readOnly": true,
-  "warning": "No healthy database available for SOUTH region.",
-  "activeNode": null,
-  "data": null
+  "warning": "Miền Nam không khả dụng. Chỉ hiển thị dữ liệu Miền Bắc.",
+  "activeNode": "SOUTH_REPLICA",
+  "data": [...]
 }
 ```
 
@@ -243,7 +243,7 @@ curl http://localhost:3000/trips/history \
 
 ```bash
 # Sau TC-04, khởi động lại south primary
-docker start pg-south-primary
+docker start south-primary
 
 # Chờ 10 giây (health check interval × 2)
 sleep 10
@@ -256,9 +256,9 @@ curl http://localhost:3000/health/south
 ```json
 {
   "data": {
-    "serviceLevel": { "south": "full" },
+    "serviceLevel": { "SOUTH": "full" },
     "nodes": {
-      "southPrimary": { "status": "online" }
+      "SOUTH_PRIMARY": { "status": "online" }
     }
   }
 }
@@ -266,8 +266,8 @@ curl http://localhost:3000/health/south
 
 **Backend log phải có:**
 ```
-[HealthMonitor] Status changed: southPrimary: offline → online
-[WRITE ROUTE] lat=10.77 → SOUTH → southPrimary
+[HealthMonitor] Trạng thái thay đổi: SOUTH_PRIMARY: OFFLINE → ONLINE
+[WRITE ROUTE] lat=10.77 → SOUTH → SOUTH_PRIMARY
 ```
 
 **Thử đặt chuyến lại → thành công**
@@ -280,7 +280,7 @@ curl http://localhost:3000/health/south
 
 ```bash
 # Tắt 1 node
-docker stop pg-north-replica
+docker stop north-replica
 
 # Kiểm tra ngay
 curl http://localhost:3000/health
@@ -291,20 +291,20 @@ curl http://localhost:3000/health
 {
   "data": {
     "nodes": {
-      "northPrimary": { "status": "online", "responseTimeMs": 2 },
-      "northReplica": { "status": "offline", "responseTimeMs": null },
-      "southPrimary": { "status": "online", "responseTimeMs": 3 },
-      "southReplica": { "status": "online", "responseTimeMs": 4 }
+      "NORTH_PRIMARY": { "status": "online", "responseTimeMs": 2 },
+      "NORTH_REPLICA": { "status": "offline", "responseTimeMs": null },
+      "SOUTH_PRIMARY": { "status": "online", "responseTimeMs": 3 },
+      "SOUTH_REPLICA": { "status": "online", "responseTimeMs": 4 }
     },
     "serviceLevel": {
-      "north": "full",
-      "south": "full"
+      "NORTH": "full",
+      "SOUTH": "full"
     }
   }
 }
 ```
 
-**Lưu ý:** `north` vẫn là `"full"` vì primary vẫn online. Chỉ khi primary down mới là `"readonly"`.
+**Lưu ý:** `NORTH` vẫn là `"full"` vì primary vẫn online. Chỉ khi primary down mới là `"readonly"`.
 
 ---
 
@@ -312,7 +312,7 @@ curl http://localhost:3000/health
 
 ```bash
 cd backend
-npm test -- --testPathPattern=distributed-db
+npm test -- --testPathPatterns=distributed-db
 ```
 
 **Kết quả mong đợi:** Tất cả pass
@@ -327,21 +327,21 @@ PASS src/test-cases/distributed-db.spec.ts
     ✓ TC-02d: Ngưỡng nhất quán với REGION_LATITUDE_THRESHOLD
   DbRoutingService — Failover & Read-Only
     ✓ TC-03: Cả 2 node online → đọc từ primary, readOnly=false
-    ✓ TC-04: South Primary down → tự chuyển sang southReplica (READ-ONLY)
+    ✓ TC-04: South Primary down → tự chuyển sang SOUTH_REPLICA (READ-ONLY)
     ✓ TC-05: South Primary down → getWriteContext() throw ServiceUnavailableException
     ✓ TC-05b: exception có warning message rõ ràng
     ✓ TC-06: South Primary down → getReadContext() trả về southReplica pool
     ✓ TC-07: South hoàn toàn down → North vẫn full service
     ✓ TC-07b: North hoàn toàn down → South vẫn full service
     ✓ TC-08: Cả South Primary + Replica down → ServiceUnavailableException
-    ✓ TC-08b: Exception khi cả 2 down có message "No healthy database available"
+    ✓ TC-08b: Exception khi cả 2 down có message cảnh báo rõ ràng
     ✓ TC-09: Primary phục hồi → routing trở về primary (full mode)
     ✓ TC-10: serviceLevelForRegion() trả đúng trạng thái
   DatabaseService.queryWithFailover
     ✓ TC-03a: Primary online → isReadOnly=false
     ✓ TC-04a: Primary down → fallback replica, isReadOnly=true
-    ✓ TC-05a: Primary down + isWriteRequest=true → throw error
-    ✓ TC-08a: Cả primary + replica down → throw DATABASE_CLUSTER_DOWN
+    ✓ TC-05a: Primary down + isWriteRequest=true → throw ServiceUnavailableException
+    ✓ TC-08a: Cả primary + replica down → throw ServiceUnavailableException
   determineRegionFromLocation
     ✓ TC-01a: Hà Nội lat=21.03 → NORTH
     ✓ TC-02a: TP.HCM lat=10.77 → SOUTH

@@ -57,14 +57,38 @@ export class RatingsService {
     }
 
     // Tạo rating
+    const ratingId = this.db.generateId();
     const { result } = await this.db.queryWithFailover(
       tripRegion,
-      `INSERT INTO ratings (trip_id, customer_id, driver_id, score, comment)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO ratings (id, trip_id, customer_id, driver_id, score, comment)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [trip_id, customerId, trip.driver_id, score, comment || null],
+      [ratingId, trip_id, customerId, trip.driver_id, score, comment || null],
       true,
     );
+
+    // Cập nhật điểm đánh giá trung bình của tài xế trên TOÀN HỆ THỐNG
+    const allRegions = [Region.NORTH, Region.SOUTH];
+    for (const r of allRegions) {
+      try {
+        const { result: avgRes } = await this.db.queryWithFailover(
+          r,
+          `SELECT AVG(score)::numeric(10,2) as avg_score FROM ratings WHERE driver_id = $1`,
+          [trip.driver_id],
+          false,
+        );
+        const newAvg = avgRes.rows[0].avg_score || score;
+
+        await this.db.queryWithFailover(
+          r,
+          `UPDATE drivers SET rating = $1 WHERE id = $2`,
+          [newAvg, trip.driver_id],
+          true,
+        );
+      } catch (err) {
+        // Bỏ qua nếu vùng kia sập
+      }
+    }
 
     return {
       message: 'Đánh giá thành công',

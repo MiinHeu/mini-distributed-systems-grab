@@ -10,8 +10,10 @@ export class TestDbController {
   constructor(private readonly dbRouting: DbRoutingService) {}
 
   @Post('read')
-  async testRead(@Body() body: TestDbDto) {
-    const ctx = this.dbRouting.getReadContext(body.latitude);
+  async testRead(@Body() body: any) {
+    const latitude = body.latitude !== undefined ? Number(body.latitude) : undefined;
+    console.log('[TestDbController] Received latitude:', latitude);
+    const ctx = this.dbRouting.getReadContext(latitude as any);
     const result = await ctx.pool.query('SELECT NOW() as now');
     return {
       readOnly: ctx.readOnly,

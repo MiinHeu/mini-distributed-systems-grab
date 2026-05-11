@@ -2,7 +2,8 @@ import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class UpdateAvailabilityDto {
   @IsString()
-  driver_id: string;
+  @IsOptional()
+  driver_id?: string;
 
   @IsBoolean()
   is_available: boolean;

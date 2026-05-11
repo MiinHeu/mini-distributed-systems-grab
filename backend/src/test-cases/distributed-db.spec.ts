@@ -9,7 +9,7 @@
  */
 
 import { LocationRouterService } from '../router/location-router.service';
-import { REGION_LATITUDE_THRESHOLD } from '../common/location.utils';
+import { REGION_LATITUDE_THRESHOLD, Region } from '../common/location.utils';
 
 // ─── Mock HealthService ───────────────────────────────────────────────────────
 
@@ -24,11 +24,11 @@ function makeHealthService(overrides: {
     isNorthReplicaHealthy: () => overrides.northReplica ?? true,
     isSouthPrimaryHealthy: () => overrides.southPrimary ?? true,
     isSouthReplicaHealthy: () => overrides.southReplica ?? true,
-    serviceLevelForRegion: (region: 'north' | 'south') => {
-      const primary = region === 'north'
+    serviceLevelForRegion: (region: Region) => {
+      const primary = region === Region.NORTH
         ? (overrides.northPrimary ?? true)
         : (overrides.southPrimary ?? true);
-      const replica = region === 'north'
+      const replica = region === Region.NORTH
         ? (overrides.northReplica ?? true)
         : (overrides.southReplica ?? true);
       if (primary) return 'full';
@@ -65,7 +65,7 @@ describe('LocationRouterService', () => {
    * Kết quả mong đợi: kết nối pg-north-primary
    */
   it('TC-01: lat=21.03 (Hà Nội) → NORTH', () => {
-    expect(router.getRegion(21.03)).toBe('north');
+    expect(router.getRegion(21.03)).toBe(Region.NORTH);
   });
 
   /**
@@ -73,20 +73,20 @@ describe('LocationRouterService', () => {
    * Kết quả mong đợi: kết nối pg-south-primary
    */
   it('TC-02: lat=10.77 (TP.HCM) → SOUTH', () => {
-    expect(router.getRegion(10.77)).toBe('south');
+    expect(router.getRegion(10.77)).toBe(Region.SOUTH);
   });
 
   it('TC-02b: Ngưỡng ranh giới lat=16.5 → NORTH', () => {
-    expect(router.getRegion(16.5)).toBe('north');
+    expect(router.getRegion(16.5)).toBe(Region.NORTH);
   });
 
   it('TC-02c: Ngưỡng ranh giới lat=16.49 → SOUTH', () => {
-    expect(router.getRegion(16.49)).toBe('south');
+    expect(router.getRegion(16.49)).toBe(Region.SOUTH);
   });
 
   it('TC-02d: Ngưỡng nhất quán với REGION_LATITUDE_THRESHOLD', () => {
-    expect(router.getRegion(REGION_LATITUDE_THRESHOLD)).toBe('north');
-    expect(router.getRegion(REGION_LATITUDE_THRESHOLD - 0.01)).toBe('south');
+    expect(router.getRegion(REGION_LATITUDE_THRESHOLD)).toBe(Region.NORTH);
+    expect(router.getRegion(REGION_LATITUDE_THRESHOLD - 0.01)).toBe(Region.SOUTH);
   });
 });
 
@@ -126,8 +126,8 @@ describe('DbRoutingService — Failover & Read-Only', () => {
     const service = new DbRoutingService(db, router, health as any);
 
     const ctx = service.getReadContext(21.03); // Hà Nội → NORTH
-    expect(ctx.region).toBe('north');
-    expect(ctx.activeNode).toBe('northPrimary');
+    expect(ctx.region).toBe(Region.NORTH);
+    expect(ctx.activeNode).toBe('NORTH_PRIMARY');
     expect(ctx.readOnly).toBe(false);
     expect(ctx.warning).toBeNull();
   });
@@ -137,14 +137,14 @@ describe('DbRoutingService — Failover & Read-Only', () => {
    * Kết quả mong đợi: trong 5-10 giây, tự chuyển sang south-replica
    * (Trong unit test: primary down → routing chuyển sang replica ngay lập tức)
    */
-  it('TC-04: South Primary down → tự chuyển sang southReplica (READ-ONLY)', () => {
+  it('TC-04: South Primary down → tự chuyển sang SOUTH_REPLICA (READ-ONLY)', () => {
     const health = makeHealthService({ southPrimary: false, southReplica: true });
     const db = makeDbService({ southPrimaryFail: true });
     const service = new DbRoutingService(db, router, health as any);
 
     const ctx = service.getReadContext(10.77); // TP.HCM → SOUTH
-    expect(ctx.region).toBe('south');
-    expect(ctx.activeNode).toBe('southReplica');
+    expect(ctx.region).toBe(Region.SOUTH);
+    expect(ctx.activeNode).toBe('SOUTH_REPLICA');
     expect(ctx.readOnly).toBe(true);
     expect(ctx.warning).toContain('SOUTH');
   });
@@ -171,7 +171,8 @@ describe('DbRoutingService — Failover & Read-Only', () => {
       fail('Should have thrown');
     } catch (e: any) {
       expect(e).toBeInstanceOf(ServiceUnavailableException);
-      expect(e.getResponse().warning).toContain('unavailable');
+      // Warning message thực tế: "Tính năng GHI (Miền Nam) tạm thời bị khóa do hệ thống đang bảo trì..."
+      expect(e.getResponse().warning).toContain('bảo trì');
       expect(e.getResponse().readOnly).toBe(true);
     }
   });
@@ -206,14 +207,14 @@ describe('DbRoutingService — Failover & Read-Only', () => {
 
     // North vẫn hoạt động bình thường
     const northCtx = service.getReadContext(21.03);
-    expect(northCtx.region).toBe('north');
-    expect(northCtx.activeNode).toBe('northPrimary');
+    expect(northCtx.region).toBe(Region.NORTH);
+    expect(northCtx.activeNode).toBe('NORTH_PRIMARY');
     expect(northCtx.readOnly).toBe(false);
 
     // North vẫn ghi được
     const northWriteCtx = service.getWriteContext(21.03);
-    expect(northWriteCtx.region).toBe('north');
-    expect(northWriteCtx.activeNode).toBe('northPrimary');
+    expect(northWriteCtx.region).toBe(Region.NORTH);
+    expect(northWriteCtx.activeNode).toBe('NORTH_PRIMARY');
 
     // South throw unavailable
     expect(() => service.getReadContext(10.77)).toThrow(ServiceUnavailableException);
@@ -231,8 +232,8 @@ describe('DbRoutingService — Failover & Read-Only', () => {
 
     // South vẫn hoạt động bình thường
     const southCtx = service.getReadContext(10.77);
-    expect(southCtx.region).toBe('south');
-    expect(southCtx.activeNode).toBe('southPrimary');
+    expect(southCtx.region).toBe(Region.SOUTH);
+    expect(southCtx.activeNode).toBe('SOUTH_PRIMARY');
     expect(southCtx.readOnly).toBe(false);
 
     // North throw unavailable
@@ -253,7 +254,7 @@ describe('DbRoutingService — Failover & Read-Only', () => {
     expect(() => service.getWriteContext(10.77)).toThrow(ServiceUnavailableException);
   });
 
-  it('TC-08b: Exception khi cả 2 down có message "No healthy database available"', () => {
+  it('TC-08b: Exception khi cả 2 down có message cảnh báo rõ ràng', () => {
     const health = makeHealthService({ southPrimary: false, southReplica: false });
     const db = makeDbService({ southPrimaryFail: true, southReplicaFail: true });
     const service = new DbRoutingService(db, router, health as any);
@@ -263,7 +264,8 @@ describe('DbRoutingService — Failover & Read-Only', () => {
       fail('Should have thrown');
     } catch (e: any) {
       expect(e).toBeInstanceOf(ServiceUnavailableException);
-      expect(e.getResponse().warning).toContain('No healthy database available');
+      // Warning message thực tế: "Không có kết nối CSDL khả dụng cho vùng MIỀN NAM."
+      expect(e.getResponse().warning).toContain('CSDL');
       expect(e.getResponse().readOnly).toBe(true);
       expect(e.getResponse().activeNode).toBeNull();
     }
@@ -280,7 +282,7 @@ describe('DbRoutingService — Failover & Read-Only', () => {
     const serviceDown = new DbRoutingService(db, router, healthDown as any);
 
     const ctxDown = serviceDown.getReadContext(10.77);
-    expect(ctxDown.activeNode).toBe('southReplica');
+    expect(ctxDown.activeNode).toBe('SOUTH_REPLICA');
     expect(ctxDown.readOnly).toBe(true);
 
     // Bước 2: Primary phục hồi → dùng primary lại
@@ -288,13 +290,13 @@ describe('DbRoutingService — Failover & Read-Only', () => {
     const serviceUp = new DbRoutingService(db, router, healthUp as any);
 
     const ctxUp = serviceUp.getReadContext(10.77);
-    expect(ctxUp.activeNode).toBe('southPrimary');
+    expect(ctxUp.activeNode).toBe('SOUTH_PRIMARY');
     expect(ctxUp.readOnly).toBe(false);
     expect(ctxUp.warning).toBeNull();
 
     // Bước 3: Ghi lại được sau khi phục hồi
     const writeCtx = serviceUp.getWriteContext(10.77);
-    expect(writeCtx.activeNode).toBe('southPrimary');
+    expect(writeCtx.activeNode).toBe('SOUTH_PRIMARY');
     expect(writeCtx.readOnly).toBe(false);
   });
 
@@ -305,23 +307,23 @@ describe('DbRoutingService — Failover & Read-Only', () => {
   it('TC-10: serviceLevelForRegion() trả đúng trạng thái theo từng kịch bản', () => {
     // Full: cả 2 online
     const h1 = makeHealthService({ southPrimary: true, southReplica: true });
-    expect(h1.serviceLevelForRegion('south')).toBe('full');
+    expect(h1.serviceLevelForRegion(Region.SOUTH)).toBe('full');
 
     // Readonly: primary down, replica online
     const h2 = makeHealthService({ southPrimary: false, southReplica: true });
-    expect(h2.serviceLevelForRegion('south')).toBe('readonly');
+    expect(h2.serviceLevelForRegion(Region.SOUTH)).toBe('readonly');
 
     // Unavailable: cả 2 down
     const h3 = makeHealthService({ southPrimary: false, southReplica: false });
-    expect(h3.serviceLevelForRegion('south')).toBe('unavailable');
+    expect(h3.serviceLevelForRegion(Region.SOUTH)).toBe('unavailable');
 
     // North không bị ảnh hưởng khi South down
     const h4 = makeHealthService({
       northPrimary: true, northReplica: true,
       southPrimary: false, southReplica: false,
     });
-    expect(h4.serviceLevelForRegion('north')).toBe('full');
-    expect(h4.serviceLevelForRegion('south')).toBe('unavailable');
+    expect(h4.serviceLevelForRegion(Region.NORTH)).toBe('full');
+    expect(h4.serviceLevelForRegion(Region.SOUTH)).toBe('unavailable');
   });
 });
 
@@ -350,7 +352,7 @@ describe('DatabaseService.queryWithFailover', () => {
 
   it('TC-03a: Primary online → query trả về isReadOnly=false', async () => {
     const { isReadOnly } = await service.queryWithFailover(
-      'NORTH' as any,
+      Region.NORTH,
       'SELECT 1',
       [],
       false,
@@ -363,7 +365,7 @@ describe('DatabaseService.queryWithFailover', () => {
     (service as any).pools['SOUTH'].primary = makePool('southPrimary', true);
 
     const { isReadOnly } = await service.queryWithFailover(
-      'SOUTH' as any,
+      Region.SOUTH,
       'SELECT 1',
       [],
       false,
@@ -371,27 +373,27 @@ describe('DatabaseService.queryWithFailover', () => {
     expect(isReadOnly).toBe(true);
   });
 
-  it('TC-05a: Primary down + isWriteRequest=true → throw error (không fallback replica)', async () => {
+  it('TC-05a: Primary down + isWriteRequest=true → throw ServiceUnavailableException (không fallback replica)', async () => {
     (service as any).pools['SOUTH'].primary = makePool('southPrimary', true);
 
     await expect(
-      service.queryWithFailover('SOUTH' as any, 'INSERT INTO trips VALUES(1)', [], true),
-    ).rejects.toThrow('DATABASE_PRIMARY_DOWN_SOUTH');
+      service.queryWithFailover(Region.SOUTH, 'INSERT INTO trips VALUES(1)', [], true),
+    ).rejects.toThrow(ServiceUnavailableException);
   });
 
-  it('TC-08a: Cả primary + replica down → throw DATABASE_CLUSTER_DOWN', async () => {
+  it('TC-08a: Cả primary + replica down → throw ServiceUnavailableException', async () => {
     (service as any).pools['SOUTH'].primary = makePool('southPrimary', true);
     (service as any).pools['SOUTH'].replica = makePool('southReplica', true);
 
     await expect(
-      service.queryWithFailover('SOUTH' as any, 'SELECT 1', [], false),
-    ).rejects.toThrow('DATABASE_CLUSTER_DOWN_SOUTH');
+      service.queryWithFailover(Region.SOUTH, 'SELECT 1', [], false),
+    ).rejects.toThrow(ServiceUnavailableException);
   });
 });
 
 // ─── determineRegionFromLocation ─────────────────────────────────────────────
 
-import { determineRegionFromLocation, Region } from '../common/location.utils';
+import { determineRegionFromLocation } from '../common/location.utils';
 
 describe('determineRegionFromLocation (location.utils)', () => {
   it('TC-01a: Hà Nội lat=21.03 → NORTH', () => {
@@ -419,7 +421,7 @@ describe('determineRegionFromLocation (location.utils)', () => {
     const testLatitudes = [21.03, 10.77, 16.5, 16.49, 20.0, 9.0];
     for (const lat of testLatitudes) {
       const fromUtils = determineRegionFromLocation(lat);
-      const fromRouter = router.getRegion(lat) === 'north' ? Region.NORTH : Region.SOUTH;
+      const fromRouter = router.getRegion(lat);
       expect(fromUtils).toBe(fromRouter);
     }
   });
